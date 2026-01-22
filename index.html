@@ -1,0 +1,1674 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>M3U8Downloader</title>
+    
+    <style>
+
+        :root {
+            /* Palette */
+            --bg-dark: #0f0c29;
+            --bg-gradient: radial-gradient(circle at top left, #302b63, #0f0c29);
+            
+            /* Glass Effect */
+            --glass-bg: rgba(255, 255, 255, 0.03);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --glass-highlight: rgba(255, 255, 255, 0.15);
+            --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+            
+            /* Text */
+            --text-main: #ffffff;
+            --text-muted: #9ca3af;
+            
+            /* Accents - Purple/Pink Theme */
+            --primary: #d946ef; /* Fuchsia-500 */
+            --primary-hover: #f0abfc;
+            --secondary: #8b5cf6; /* Violet-500 */
+            --success: #34d399; /* Emerald-400 */
+            --danger: #f43f5e; /* Rose-500 */
+            --warning: #fbbf24; /* Amber-400 */
+            
+            --radius-lg: 24px;
+            --radius-md: 16px;
+            --radius-sm: 8px;
+        }
+
+        * { box-sizing: border-box; outline: none; }
+
+        body {
+            margin: 0;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: #0f0c29;
+            background-image: 
+                radial-gradient(circle at 15% 50%, rgba(76, 29, 149, 0.15), transparent 25%), 
+                radial-gradient(circle at 85% 30%, rgba(59, 130, 246, 0.15), transparent 25%);
+            background-attachment: fixed;
+            color: var(--text-main);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        [v-cloak] { display: none !important; }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.2); }
+
+        /* Layout */
+        .app-container {
+            max-width: 1440px;
+            margin: 0 auto;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 32px;
+        }
+
+        /* Enhanced Glass Panel */
+        .glass-panel {
+            background: var(--glass-bg);
+            backdrop-filter: blur(24px) saturate(180%);
+            -webkit-backdrop-filter: blur(24px) saturate(180%);
+            border: 1px solid var(--glass-border);
+            border-top: 1px solid var(--glass-highlight);
+            border-radius: var(--radius-lg);
+            padding: 28px;
+            box-shadow: var(--glass-shadow);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        
+        .glass-input {
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--glass-border);
+            color: white;
+            padding: 14px 18px;
+            border-radius: var(--radius-md);
+            font-size: 1rem;
+            width: 100%;
+            transition: all 0.2s;
+        }
+        .glass-input:focus {
+            border-color: var(--primary);
+            background: rgba(0, 0, 0, 0.4);
+            box-shadow: 0 0 0 2px rgba(192, 132, 252, 0.2);
+        }
+
+        /* Header */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            background: transparent;
+            border: none;
+            box-shadow: none;
+            backdrop-filter: none;
+        }
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .logo-box {
+            width: 42px;
+            height: 42px;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+        }
+        .app-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin: 0;
+            background: linear-gradient(to right, #fff, #e0e7ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.02em;
+        }
+
+        /* Status Badge */
+        .status-badge {
+            padding: 8px 16px;
+            border-radius: 20px;
+            background: rgba(0,0,0,0.2);
+            border: 1px solid var(--glass-border);
+            font-size: 0.85rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            backdrop-filter: blur(10px);
+        }
+        .dot {
+            width: 8px; height: 8px; border-radius: 50%;
+            background: #555;
+            box-shadow: 0 0 8px currentColor;
+        }
+        .dot.active { background: var(--success); color: var(--success); }
+        .dot.loading { background: var(--warning); color: var(--warning); animation: pulse 1.5s infinite; }
+        .dot.error { background: var(--danger); color: var(--danger); }
+
+        /* Dashboard Grid */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 2.2fr 1fr;
+            gap: 32px;
+            align-items: start;
+        }
+        @media (max-width: 1024px) {
+            .dashboard-grid { grid-template-columns: 1fr; }
+        }
+
+        /* Buttons */
+        .btn {
+            border: none;
+            padding: 12px 24px;
+            border-radius: var(--radius-md);
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            color: white;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            font-size: 0.95rem;
+            position: relative;
+            overflow: hidden;
+            white-space: nowrap; /* Prevent wrapping */
+            flex-shrink: 0; /* Prevent shrinking */
+        }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; filter: grayscale(0.8); }
+        .btn:active:not(:disabled) { transform: scale(0.97); }
+
+        .btn-glow {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+        }
+        .btn-glow:hover:not(:disabled) {
+            box-shadow: 0 8px 20px rgba(99, 102, 241, 0.4);
+            transform: translateY(-1px);
+        }
+
+        .btn-glass {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid var(--glass-border);
+        }
+        .btn-glass:hover:not(:disabled) {
+            background: rgba(255,255,255,0.1);
+            border-color: var(--glass-highlight);
+        }
+        
+        .btn-glass.active {
+            background: rgba(192, 132, 252, 0.15);
+            border-color: var(--primary);
+            color: var(--primary-hover);
+        }
+
+        .btn-danger { background: linear-gradient(135deg, #ef4444, #b91c1c); box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3); }
+        .btn-success { background: linear-gradient(135deg, #10b981, #059669); box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3); }
+        .btn-sm { padding: 6px 14px; font-size: 0.85rem; border-radius: 10px; }
+
+        /* Forms */
+        .input-row {
+            display: flex;
+            gap: 12px;
+            margin-top: 8px;
+            overflow-x: auto; /* Allow scroll on very small screens */
+            padding-bottom: 4px;
+        }
+        .label-text {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+            display: block;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        /* Player */
+        .video-container {
+            width: 100%;
+            aspect-ratio: 16/9;
+            background: #000;
+            border-radius: var(--radius-md);
+            overflow: hidden;
+            position: relative;
+            box-shadow: 0 20px 40px -10px rgba(0,0,0,0.5);
+            border: 1px solid var(--glass-border);
+        }
+        video { width: 100%; height: 100%; object-fit: contain; }
+        .video-overlay {
+            position: absolute; inset: 0;
+            background: rgba(0,0,0,0.6);
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            color: var(--text-muted);
+            backdrop-filter: blur(8px);
+        }
+
+        /* Timeline */
+        .timeline-wrapper {
+            margin-top: 24px;
+            background: rgba(0,0,0,0.2);
+            border-radius: var(--radius-md);
+            padding: 20px;
+            border: 1px solid var(--glass-border);
+        }
+        .timeline-track {
+            height: 64px;
+            background: rgba(255,255,255,0.03);
+            border-radius: 12px;
+            position: relative;
+            overflow: hidden;
+            cursor: crosshair;
+            margin: 16px 0;
+            border: 1px solid var(--glass-border);
+        }
+        .seg-bar {
+            position: absolute; height: 100%;
+            border-right: 1px solid rgba(0,0,0,0.2);
+            transition: background 0.1s, opacity 0.1s;
+        }
+        /* Default State (Unselected) - High Contrast Alternating */
+        .seg-bar.default:nth-child(odd) { background: rgba(255,255,255,0.05); }
+        .seg-bar.default:nth-child(even) { background: rgba(255,255,255,0.2); }
+        
+        /* Selected State - Subtle Alternating */
+        .seg-bar.selected:nth-child(odd) { background: var(--primary); opacity: 0.85; }
+        .seg-bar.selected:nth-child(even) { background: var(--primary); opacity: 0.65; }
+        
+        /* Downloaded State (Green) */
+        .seg-bar.downloaded:not(.selected):nth-child(odd) { background: var(--success); opacity: 0.6; }
+        .seg-bar.downloaded:not(.selected):nth-child(even) { background: var(--success); opacity: 0.4; }
+        .seg-bar.downloaded.selected { border-top: 3px solid var(--success); }
+
+        /* Hover Effect */
+        .seg-bar:hover { background: #fff !important; opacity: 1 !important; z-index: 10; }
+        
+        /* --- Timeline Themes --- */
+        
+        /* High Contrast */
+        .theme-high-contrast .seg-bar.default:nth-child(odd) { background: #333; }
+        .theme-high-contrast .seg-bar.default:nth-child(even) { background: #666; }
+        .theme-high-contrast .seg-bar.selected { background: #ffd700; opacity: 1; } /* Gold */
+        .theme-high-contrast .seg-bar { border-right: 1px solid #000; }
+
+        /* Ocean */
+        .theme-ocean .seg-bar.default:nth-child(odd) { background: rgba(2, 132, 199, 0.15); }
+        .theme-ocean .seg-bar.default:nth-child(even) { background: rgba(2, 132, 199, 0.35); }
+        .theme-ocean .seg-bar.selected { background: #38bdf8; opacity: 0.9; } /* Sky Blue */
+
+        /* Warm */
+        .theme-warm .seg-bar.default:nth-child(odd) { background: rgba(234, 88, 12, 0.15); }
+        .theme-warm .seg-bar.default:nth-child(even) { background: rgba(234, 88, 12, 0.35); }
+        .theme-warm .seg-bar.selected { background: #fb923c; opacity: 0.9; } /* Orange */
+
+        .selection-rect {
+            position: absolute; height: 100%;
+            background: rgba(192, 132, 252, 0.2);
+            border: 1px solid var(--primary);
+            border-top: 0; border-bottom: 0;
+            pointer-events: none;
+        }
+
+        /* Right Panel */
+        .control-group {
+            display: flex; flex-direction: column; gap: 20px;
+        }
+        
+        /* Grid Visualizer */
+        .grid-visualizer {
+            display: flex; flex-wrap: wrap; gap: 2px;
+            max-height: 400px;
+            overflow-y: auto;
+            padding: 16px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 16px;
+            border: 1px solid var(--glass-border);
+        }
+        .grid-cell {
+            width: 10px; height: 10px;
+            border-radius: 2px;
+            cursor: pointer;
+            position: relative;
+            transition: transform 0.1s;
+        }
+        .grid-cell:hover { transform: scale(1.8); z-index: 100; box-shadow: 0 0 8px rgba(0,0,0,0.5); }
+        .cell-def { background: rgba(255,255,255,0.08); }
+        .cell-sel { background: var(--primary); }
+        /* Completed & Selected */
+        .cell-ok { background: var(--success); border: 2px solid var(--primary); }
+        /* Completed & Unselected */
+        .cell-ok-dim { background: var(--success); opacity: 0.4; filter: grayscale(0.5); }
+        
+        .cell-load { background: var(--warning); animation: pulse 1s infinite; }
+        .cell-err { background: var(--danger); }
+
+        /* Animations */
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .spinner {
+            width: 40px; height: 40px;
+            border: 3px solid rgba(255,255,255,0.1);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 0.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+        }
+
+        /* Tooltip */
+        .tooltip {
+            position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
+            background: rgba(0,0,0,0.9); padding: 4px 8px; border-radius: 6px;
+            font-size: 11px; white-space: nowrap; opacity: 0; pointer-events: none;
+            transition: opacity 0.15s; z-index: 200;
+            border: 1px solid var(--glass-border);
+            margin-bottom: 8px;
+        }
+        .grid-cell:hover .tooltip { opacity: 1; }
+        /* First row tooltips go down */
+        .grid-cell:nth-child(-n+40) .tooltip {
+            bottom: auto; top: 100%; margin-top: 5px;
+            z-index: 201;
+        }
+
+    </style>
+
+    <!-- CDN Loader -->
+    <script>
+        // Module Loader with Fallback
+        const loadModule = async (sources) => {
+            for (const src of sources) {
+                try {
+                    const module = await import(src);
+                    return module;
+                } catch (e) {
+                    console.warn(`Failed to load module from ${src}:`, e);
+                }
+            }
+            throw new Error("All module sources failed");
+        };
+
+        const loadScript = (sources) => {
+            return new Promise((resolve, reject) => {
+                const tryLoad = (index) => {
+                    if (index >= sources.length) {
+                        reject(new Error(`Failed to load script from all sources`));
+                        return;
+                    }
+                    const script = document.createElement('script');
+                    script.src = sources[index];
+                    script.crossOrigin = "anonymous"; 
+                    script.onload = resolve;
+                    script.onerror = () => tryLoad(index + 1);
+                    document.head.appendChild(script);
+                };
+                tryLoad(0);
+            });
+        };
+
+        (async () => {
+            try {
+                // Load Vue & Hls.js (Global)
+                await Promise.all([
+                    loadScript(["https://cdnjs.cloudflare.com/ajax/libs/vue/3.4.15/vue.global.min.js", "https://unpkg.com/vue@3.4.15/dist/vue.global.js"]),
+                    loadScript(["https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.2/hls.min.js", "https://unpkg.com/hls.js@1.5.2/dist/hls.min.js"])
+                ]);
+
+                // Init App
+                window.libsLoaded = true;
+                if (window.initApp) window.initApp();
+
+            } catch (e) {
+                document.body.innerHTML = `<div style="color:red;padding:50px;text-align:center"><h1>资源加载失败</h1><p>${e.message}</p></div>`;
+            }
+        })();
+    </script>
+</head>
+<body>
+    <div id="app" class="app-container" v-cloak>
+        <!-- Header -->
+        <header class="glass-panel header">
+            <div class="brand">
+                <div class="logo-box">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                </div>
+                <h1 class="app-title">M3U8Downloader</h1>
+            </div>
+            
+            <div class="status-group">
+                <div class="status-badge" style="flex-direction:column; align-items:flex-start; gap:4px; min-width: 180px;">
+                    <div style="display:flex; align-items:center; gap:8px; width:100%;">
+                        <div class="dot" :class="{ active: ffmpegLoaded, loading: ffmpegLoading, error: error && !ffmpegLoaded }"></div>
+                        <span v-if="ffmpegLoading" style="flex:1;">{{ ffmpegStatus || '加载内核...' }}</span>
+                        <span v-else-if="ffmpegLoaded" style="flex:1;">FFmpeg 就绪</span>
+                        <span v-else style="flex:1; font-size:0.8em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:150px;" :title="error">{{ error ? error : '未加载' }}</span>
+                        <a v-if="!ffmpegLoaded && !ffmpegLoading" href="#" @click.prevent="loadFFmpeg" style="color:var(--primary);">重试</a>
+                    </div>
+                    <!-- Progress Bar -->
+                    <div v-if="ffmpegLoading" style="width:100%; height:4px; background:rgba(255,255,255,0.1); border-radius:2px; overflow:hidden; position:relative;">
+                        <div :style="{ width: ffmpegLoadProgress + '%' }" style="height:100%; background:var(--primary); transition:width 0.2s;"></div>
+                    </div>
+                    <div v-if="ffmpegLoading" style="font-size:0.75rem; color:var(--text-muted); width:100%; text-align:right;">
+                        {{ ffmpegLoadProgress }}%
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <div class="dashboard-grid">
+            <!-- LEFT COLUMN -->
+            <div style="display:flex; flex-direction:column; gap:24px;">
+                
+                <!-- Input Panel -->
+                <div class="glass-panel">
+                    <label class="label-text">M3U8 视频源 / 本地文件</label>
+                    <div class="input-row">
+                        <input type="text" v-model="url" placeholder="https://example.com/video.m3u8" class="glass-input" :disabled="isDownloading">
+                        <input type="file" ref="fileInput" @change="handleFile" hidden accept=".m3u8,.txt">
+                        <button class="btn btn-glass" @click="$refs.fileInput.click()" title="上传本地文件">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>
+                        </button>
+                        <button class="btn btn-glow" @click="parseM3u8()" :disabled="!url || isDownloading">
+                            解析链接
+                        </button>
+                    </div>
+
+                    <!-- Advanced -->
+                    <div style="margin-top:16px;">
+                        <div @click="showAdvanced = !showAdvanced" style="cursor:pointer; display:flex; align-items:center; gap:8px; font-size:0.85rem; color:var(--primary);">
+                            <span>{{ showAdvanced ? '▼' : '▶' }} 高级设置 (Headers / Key)</span>
+                        </div>
+                        <div v-if="showAdvanced" style="margin-top:12px; display:flex; flex-direction:column; gap:12px;">
+                            <div>
+                                <label class="label-text">自定义 Request Headers (JSON)</label>
+                                <textarea v-model="customHeaders" rows="3" class="glass-input" style="font-family:monospace; font-size:0.85rem;" placeholder='{"Referer": "https://site.com", "Origin": "https://site.com"}'></textarea>
+                            </div>
+
+                            <!-- New Settings -->
+                            <div style="display:flex; gap:24px; flex-wrap:wrap;">
+                                <div style="flex:1; min-width:200px;">
+                                    <label class="label-text">并发下载数: {{ concurrency }}</label>
+                                    <input type="range" v-model.number="concurrency" min="1" max="16" step="1" style="width:100%; accent-color:var(--primary);">
+                                </div>
+                                <div style="flex:1; min-width:200px;">
+                                    <label class="label-text">时间轴配色</label>
+                                    <select v-model="timelineTheme" class="glass-input" style="padding:8px;">
+                                        <option value="default">默认 (Default)</option>
+                                        <option value="high-contrast">高对比 (High Contrast)</option>
+                                        <option value="ocean">海洋 (Ocean)</option>
+                                        <option value="warm">暖色 (Warm)</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Error Alert -->
+                    <div v-if="error" style="margin-top:16px; padding:12px; background:rgba(255,65,108,0.2); border:1px solid var(--danger); border-radius:12px; color:#ffcccb; display:flex; gap:10px; align-items:center;">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                        <span>{{ error }}</span>
+                    </div>
+
+                    <!-- Variants & Tracks -->
+                    <div v-if="variants.length > 0 || audioTracks.length > 0" style="margin-top:16px;">
+                        <label class="label-text">画质 / 变体选择</label>
+                        <div style="display:flex; flex-wrap:wrap; gap:8px;">
+                            <button v-for="(v, i) in variants" :key="'v'+i" 
+                                class="btn btn-sm btn-glass" 
+                                :style="currentVariant === v ? 'border-color:var(--primary); background:rgba(217, 70, 239, 0.2)' : ''"
+                                @click="selectVariant(v)">
+                                {{ v.resolution ? `${v.resolution.width}x${v.resolution.height}` : 'Auto' }}
+                                <span style="font-size:0.7em; opacity:0.7; margin-left:4px;" v-if="v.bandwidth">{{ (v.bandwidth/1000).toFixed(0) }}k</span>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div v-if="audioTracks.length > 0" style="margin-top:12px;">
+                        <label class="label-text">音频轨道 (Audio)</label>
+                        <div style="display:flex; flex-wrap:wrap; gap:8px;">
+                            <button v-for="(a, i) in audioTracks" :key="'a'+i"
+                                class="btn btn-sm btn-glass"
+                                @click="parseM3u8(a.url)">
+                                🎵 {{ a.name }} ({{ a.lang || 'unk' }})
+                            </button>
+                        </div>
+                    </div>
+
+                    <div v-if="subtitles.length > 0" style="margin-top:12px;">
+                        <label class="label-text">字幕 (Subtitles)</label>
+                        <div style="display:flex; flex-wrap:wrap; gap:8px;">
+                            <button v-for="(s, i) in subtitles" :key="'s'+i"
+                                class="btn btn-sm btn-glass"
+                                @click="parseM3u8(s.url)">
+                                📝 {{ s.name }} ({{ s.lang || 'unk' }})
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Video Player -->
+                <div class="glass-panel" style="padding:0; overflow:hidden;">
+                    <div class="video-container">
+                        <video ref="videoRef" controls crossOrigin="anonymous"></video>
+                        
+                        <!-- Loading Overlay -->
+                        <div v-if="isPlayerLoading" class="video-overlay">
+                            <div class="spinner"></div>
+                            <span style="margin-top:16px; font-size:0.9rem;">正在加载流媒体...</span>
+                        </div>
+                        
+                        <!-- Empty State -->
+                        <div v-if="!isPlayerReady && !url && !isPlayerLoading" class="video-overlay">
+                            <svg width="64" height="64" stroke="rgba(255,255,255,0.2)" fill="none" viewBox="0 0 24 24" stroke-width="1"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                            <span style="margin-top:16px; color:rgba(255,255,255,0.3)">等待输入</span>
+                        </div>
+
+                        <!-- Stats Badge -->
+                        <div v-if="playerStats.bitrate" style="position:absolute; top:16px; right:16px; background:rgba(0,0,0,0.6); backdrop-filter:blur(4px); padding:4px 8px; border-radius:6px; font-size:0.75rem; font-family:monospace; border:1px solid rgba(255,255,255,0.1);">
+                            {{ (playerStats.bitrate / 1000000).toFixed(2) }} Mbps
+                        </div>
+                        
+                        <!-- PiP Button -->
+                        <button @click="requestPiP" style="position:absolute; bottom:16px; right:16px; background:rgba(0,0,0,0.6); border:none; color:white; padding:8px; border-radius:50%; cursor:pointer; backdrop-filter:blur(4px); display:flex; align-items:center; justify-content:center; transition:all 0.2s;" title="画中画">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line></svg>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Timeline Visualizer -->
+                <div v-if="segments.length > 0" class="glass-panel">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <h3 style="margin:0; font-size:1.1rem;">时间轴切片</h3>
+                        <div style="display:flex; gap:8px;">
+                            <button class="btn btn-sm btn-glass" @click="selectSmart(300)">⚡ 前五分钟</button>
+                            <button class="btn btn-sm btn-glass" @click="selectSmart(30)">⚡ 前30秒</button>
+                            <button class="btn btn-sm btn-glass" @click="selectSmart(-30)">⚡ 后30秒</button>
+                            <button class="btn btn-sm btn-glass" @click="selectAll">全选</button>
+                            <button class="btn btn-sm btn-glass" style="color:var(--danger); border-color:rgba(255,65,108,0.3)" @click="clearSelection">清空</button>
+                        </div>
+                    </div>
+
+                    <div class="timeline-wrapper" :class="'theme-' + timelineTheme">
+                        <div class="timeline-track" 
+                             ref="timelineRef"
+                             @mousedown="startSelection"
+                             @mousemove="updateSelection"
+                             @mouseup="endSelection"
+                             @mouseleave="endSelection">
+                            
+                            <div v-for="(seg, idx) in visualizationSegments" :key="idx"
+                                 class="seg-bar"
+                                 :class="[
+                                     selectedSegments.has(seg.index) ? 'selected' : 'default',
+                                     completedSegments.has(seg.index) ? 'downloaded' : ''
+                                 ]"
+                                 :style="{ left: (seg.start / totalDuration * 100) + '%', width: (seg.duration / totalDuration * 100) + '%' }">
+                            </div>
+
+                            <div v-if="isSelecting" class="selection-rect" 
+                                 :style="{ left: selectionStyle.left, width: selectionStyle.width, background: selectionMode === 'remove' ? 'rgba(255, 65, 108, 0.3)' : 'rgba(176, 38, 255, 0.3)' }">
+                            </div>
+                        </div>
+                        
+                        <div style="display:flex; justify-content:space-between; font-size:0.8rem; color:var(--text-muted);">
+                            <span>00:00:00</span>
+                            <span>{{ formatTime(totalDuration) }}</span>
+                        </div>
+                    </div>
+                    
+                    <div style="margin-top:16px; display:flex; justify-content:space-between; font-size:0.9rem;">
+                        <span>已选: <strong style="color:var(--primary)">{{ selectedCount }}</strong> / {{ segments.length }} ({{ formatTime(selectedDuration) }})</span>
+                        <span>预计大小: ~{{ estimateSize }} MB</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- RIGHT COLUMN -->
+            <div style="display:flex; flex-direction:column; gap:24px;">
+                
+                <!-- Control Panel -->
+                <div class="glass-panel control-group">
+                    <h3 style="margin:0; font-size:1.1rem;">任务控制</h3>
+                    
+                    <!-- Export Format -->
+                    <div>
+                        <label class="label-text">导出格式</label>
+                        <div style="position:relative; display:flex; background:rgba(0,0,0,0.3); padding:4px; border-radius:12px; border:1px solid var(--glass-border); cursor:pointer;">
+                            <!-- Sliding Background -->
+                            <div style="position:absolute; top:4px; bottom:4px; width:calc(50% - 4px); border-radius:8px; background:linear-gradient(135deg, var(--primary), var(--secondary)); transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 2px 10px rgba(0,0,0,0.3);"
+                                 :style="{ left: exportFormat === 'ts' ? '4px' : '50%' }">
+                            </div>
+                            
+                            <button class="btn btn-sm" 
+                                    style="flex:1; background:transparent; border:none; z-index:1; transition:color 0.2s; box-shadow:none;"
+                                    :style="{ color: exportFormat === 'ts' ? 'white' : 'rgba(255,255,255,0.5)' }"
+                                    @click="exportFormat = 'ts'">
+                                Raw
+                            </button>
+                            <button class="btn btn-sm" 
+                                    style="flex:1; background:transparent; border:none; z-index:1; transition:color 0.2s; box-shadow:none;"
+                                    :style="{ color: exportFormat === 'mp4' ? 'white' : 'rgba(255,255,255,0.5)' }"
+                                    @click="exportFormat = 'mp4'">
+                                Mix
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- File Name -->
+                    <div>
+                        <label class="label-text">导出文件名</label>
+                        <div class="input-row" style="background:rgba(0,0,0,0.2); padding:4px 12px; border-radius:12px; border:1px solid var(--glass-border);">
+                            <input type="text" v-model="filename" style="background:transparent; border:none; color:white; width:100%; padding:8px 0; outline:none;" placeholder="video">
+                            <span style="align-self:center; color:gray; font-family:monospace; font-size:0.8rem;">.{{ exportFormat }}</span>
+                        </div>
+                    </div>
+
+                    <!-- Main Actions -->
+                    <div style="display:flex; flex-direction:column; gap:12px; margin-top:8px;">
+                        <button v-if="!isDownloading && !isRecording" 
+                                class="btn btn-glow" 
+                                :disabled="downloadableCount === 0" 
+                                @click="startDownload">
+                            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                            开始下载 ({{ downloadableCount }})
+                        </button>
+
+                        <button v-if="isLive && !downloadFinished && !isDownloading"
+                                class="btn btn-danger" 
+                                @click="toggleRecording">
+                            {{ isRecording ? '⏹ 停止录制' : '⏺ 开始直播录制' }}
+                        </button>
+
+                        <button v-if="isDownloading || isRecording" 
+                                class="btn btn-danger btn-glass" 
+                                @click="cancelDownload">
+                            停止任务
+                        </button>
+
+                        <button v-if="downloadFinished || (isRecording === false && completedSegments.size > 0)" 
+                                class="btn btn-success" 
+                                :disabled="isExporting || exportableCount === 0 || ffmpegLoading" 
+                                @click="exportFile">
+                            <span v-if="isExporting">正在导出 / 转码中...</span>
+                            <span v-else-if="ffmpegLoading">引擎初始化 ({{ ffmpegLoadProgress }}%)</span>
+                            <span v-else>保存文件 ({{ exportableCount }})</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Status Monitor -->
+                <div class="glass-panel" style="flex:1; display:flex; flex-direction:column; min-height:400px;">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:16px;">
+                        <h3 style="margin:0; font-size:1.1rem;">状态监控</h3>
+                        <span style="font-family:monospace; color:var(--primary); font-size:1.1rem;">{{ downloadedCount }} / {{ selectedCount }}</span>
+                    </div>
+
+                    <!-- Progress Bar -->
+                    <div style="height:8px; background:rgba(255,255,255,0.1); border-radius:4px; overflow:hidden; margin-bottom:12px;">
+                        <div :style="{ width: progress + '%', background: 'var(--primary)', boxShadow: '0 0 10px var(--primary)' }" style="height:100%; transition:width 0.3s ease;"></div>
+                    </div>
+                    
+                    <div style="display:flex; justify-content:space-between; font-size:0.85rem; color:var(--text-muted); margin-bottom:16px;">
+                        <span>{{ statusMessage }}</span>
+                        <span>{{ progress }}%</span>
+                    </div>
+
+                    <!-- Grid -->
+                    <div class="grid-visualizer custom-scrollbar">
+                        <div v-if="segments.length === 0" style="width:100%; text-align:center; padding:40px; color:rgba(255,255,255,0.2);">
+                            暂无分片数据
+                        </div>
+                        <div v-for="seg in segments" :key="seg.index"
+                             class="grid-cell"
+                             :class="{
+                                 'cell-err': failedSegments.find(f => f.index === seg.index),
+                                 'cell-ok': completedSegments.has(seg.index) && selectedSegments.has(seg.index),
+                                 'cell-ok-dim': completedSegments.has(seg.index) && !selectedSegments.has(seg.index),
+                                 'cell-load': activeDownloads.find(s => s.index === seg.index),
+                                 'cell-sel': selectedSegments.has(seg.index) && !completedSegments.has(seg.index),
+                                 'cell-def': !selectedSegments.has(seg.index) && !completedSegments.has(seg.index)
+                             }"
+                             @click="toggleSegmentSelection(seg)">
+                             <div class="tooltip">#{{ seg.index }} ({{ seg.duration }}s)</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Application Logic -->
+    <script>
+        // --- Services ---
+
+        /**
+         * Independent MP4 Transcoding Service Module (v3 - Single Threaded)
+         * - Uses FFmpeg.wasm v0.11.x (Single Threaded)
+         * - NO SharedArrayBuffer required
+         * - NO COOP/COEP headers required
+         * - Maximum compatibility
+         */
+        class TranscoderService {
+            constructor() {
+                this.ffmpeg = null;
+                this.isLoaded = Vue.ref(false);
+                this.isLoading = Vue.ref(false);
+                this.status = Vue.ref(''); 
+                this.loadProgress = Vue.ref(0);
+                this.error = Vue.ref(null);
+                this.logs = Vue.ref([]);
+                
+                // Config
+                this.corePath = Vue.ref('https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js');
+                this.mainScript = 'https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js';
+            }
+
+            log(msg) {
+                console.log('[Transcoder]', msg);
+                this.logs.value.push(msg);
+            }
+
+            async loadScript(src) {
+                return new Promise((resolve, reject) => {
+                    if (document.querySelector(`script[src="${src}"]`)) return resolve();
+                    const script = document.createElement('script');
+                    script.src = src;
+                    script.onload = resolve;
+                    script.onerror = reject;
+                    document.head.appendChild(script);
+                });
+            }
+
+            async load() {
+                if (this.isLoaded.value || this.isLoading.value) return;
+                
+                this.isLoading.value = true;
+                this.error.value = null;
+                this.status.value = '准备中...';
+                this.loadProgress.value = 0;
+
+                try {
+                    // 1. Load FFmpeg v0.11.x Main Script
+                    this.status.value = '加载 JS 库...';
+                    await this.loadScript(this.mainScript);
+                    
+                    if (typeof FFmpeg === 'undefined') {
+                        throw new Error("FFmpeg script loaded but global object not found");
+                    }
+                    
+                    const { createFFmpeg, fetchFile } = FFmpeg;
+                    this.fetchFile = fetchFile; // Save reference
+                    
+                    this.loadProgress.value = 20;
+
+                    // 2. Initialize Engine
+                    this.status.value = '启动单线程引擎...';
+                    this.log(`Core Path: ${this.corePath.value}`);
+
+                    const instance = createFFmpeg({ 
+                        log: true,
+                        corePath: this.corePath.value,
+                        progress: ({ ratio }) => {
+                            // Loading progress is not granular in 0.11, but we get run progress
+                        }
+                    });
+
+                    instance.setLogger(({ type, message }) => {
+                        this.log(`[FFmpeg] ${message}`);
+                    });
+
+                    // 3. Load Core (This downloads the big .wasm file)
+                    this.status.value = '下载并编译 WASM (约25MB)...';
+                    // Mock progress since v0.11 load() doesn't report download progress well
+                    let mockProgress = 20;
+                    const timer = setInterval(() => {
+                        mockProgress += 5;
+                        if(mockProgress > 90) mockProgress = 90;
+                        this.loadProgress.value = mockProgress;
+                    }, 500);
+
+                    await instance.load();
+                    
+                    clearInterval(timer);
+                    this.loadProgress.value = 100;
+                    
+                    this.ffmpeg = instance;
+                    this.isLoaded.value = true;
+                    this.status.value = '就绪 (单线程模式)';
+                    this.log("FFmpeg Engine Ready (Single Threaded)");
+
+                } catch (e) {
+                    console.error("Transcoder Load Error:", e);
+                    this.error.value = e.message + " (请检查网络是否能访问 unpkg.com)";
+                    this.status.value = '失败';
+                    this.isLoading.value = false;
+                } finally {
+                    if (!this.error.value) this.isLoading.value = false;
+                }
+            }
+
+            async transcode(blobs, filename, format = 'mp4') {
+                if (!this.isLoaded.value) await this.load();
+                if (!this.ffmpeg) throw new Error("Transcoder not ready");
+
+                this.log(`Starting Remux to ${format}...`);
+                try {
+                    const ffmpeg = this.ffmpeg;
+                    // Merge blobs
+                    const mergedBlob = new Blob(blobs, { type: 'video/mp2t' });
+                    const buffer = await mergedBlob.arrayBuffer();
+                    
+                    // Write file
+                    this.log("Writing input file...");
+                    ffmpeg.FS('writeFile', 'input.ts', new Uint8Array(buffer));
+                    
+                    // Run FFmpeg
+                    const outputFile = `output.${format}`;
+                    this.log("Running FFmpeg...");
+                    // -map 0 is safer to include all streams
+                    await ffmpeg.run('-i', 'input.ts', '-c', 'copy', '-map', '0', '-movflags', 'faststart', outputFile);
+                    
+                    // Read result
+                    this.log("Reading output...");
+                    const data = ffmpeg.FS('readFile', outputFile);
+                    
+                    // Cleanup
+                    try {
+                        ffmpeg.FS('unlink', 'input.ts');
+                        ffmpeg.FS('unlink', outputFile);
+                    } catch(e) {}
+
+                    const mimeType = format === 'mp4' ? 'video/mp4' : 'video/mp2t';
+                    return new Blob([data.buffer], { type: mimeType });
+                } catch (e) {
+                    this.error.value = "Transcode Error: " + e.message;
+                    throw e;
+                }
+            }
+            
+            // Compatibility stubs for UI
+            setCdnSource(s) {} 
+            setLocalFiles(js, wasm) {
+                 if(js) {
+                     // For 0.11, we just need the path or blob URL
+                     this.corePath.value = URL.createObjectURL(js);
+                     // Note: 0.11 expects wasm to be at same path.wasm if not specified
+                     // This simple shim might be enough if user provides core.js that knows how to find wasm
+                 }
+            }
+        }
+
+        /**
+         * Video Player Component Service
+         * Manages Hls.js instance and Video Element
+         */
+                    class VideoPlayerService {
+                        constructor() {
+                            this.hls = null;
+                            this.videoElement = null;
+                            this.isReady = Vue.ref(false);
+                            this.isLoading = Vue.ref(false);
+                            this.error = Vue.ref(null);
+                            this.stats = Vue.ref({ bitrate: 0, resolution: '' });
+                        }
+            
+                        mount(videoEl) {
+                            this.videoElement = videoEl;
+                        }
+            
+                        unmount() {
+                            this.destroy();
+                            this.videoElement = null;
+                        }
+            
+                        destroy() {
+                            if (this.hls) {
+                                this.hls.destroy();
+                                this.hls = null;
+                            }
+                            this.isReady.value = false;
+                            this.isLoading.value = false;
+                        }
+            
+                        loadSource(url, getProxyUrlFn, onSegmentLoaded) {
+                            if (!this.videoElement) return;
+                            this.destroy();
+                            this.isLoading.value = true;
+                            this.error.value = null;
+            
+                            if (Hls.isSupported()) {
+                                // Custom Proxy Loader Definition
+                                class ProxyLoader extends Hls.DefaultConfig.loader {
+                                    load(context, config, callbacks) {
+                                        const proxyContext = { ...context };
+                                        if (context.url.startsWith('http') && !context.url.includes('/proxy?url=')) {
+                                            proxyContext.url = getProxyUrlFn(context.url);
+                                        }
+                                        
+                                        const originalOnSuccess = callbacks.onSuccess;
+                                        callbacks.onSuccess = (response, stats, ctx) => {
+                                            response.url = context.url;
+                                            if (ctx) ctx.url = context.url;
+                                            
+                                            // Cache Interception
+                                            if (onSegmentLoaded && response.data) {
+                                                // Pass context.frag to get sequence number directly
+                                                onSegmentLoaded(context.url, response.data, context.frag);
+                                            }
+            
+                                            originalOnSuccess(response, stats, ctx);
+                                        };
+                                        super.load(proxyContext, config, callbacks);
+                                    }
+                                }
+            
+                                this.hls = new Hls({
+                                    autoStartLoad: false, // Prevent auto loading to ensure quality lock
+                                    enableWorker: true,
+                                    loader: ProxyLoader,
+                                    // Force high quality preferences
+                                    startLevel: -1, // Auto start, but we will override in MANIFEST_PARSED
+                                    capLevelToPlayerSize: false // Don't limit by player size
+                                });
+            
+                                this.hls.loadSource(url);
+                                this.hls.attachMedia(this.videoElement);
+                                
+                                this.hls.on(Hls.Events.MANIFEST_PARSED, (event, data) => {
+                                    // Force Highest Quality Level (Resolution)
+                                    if (this.hls.levels.length > 1) {
+                                        // levels are usually sorted by bandwidth, but let's be sure
+                                        let maxLevel = -1;
+                                        let maxBw = -1;
+                                        this.hls.levels.forEach((lvl, idx) => {
+                                            if (lvl.bitrate > maxBw) {
+                                                maxBw = lvl.bitrate;
+                                                maxLevel = idx;
+                                            }
+                                        });
+                                        if (maxLevel !== -1) {
+                                            console.log(`[Player] Forcing Max Quality: Level ${maxLevel} (${this.hls.levels[maxLevel].height}p)`);
+                                            this.hls.currentLevel = maxLevel;
+                                            this.hls.loadLevel = maxLevel; // Force load level
+                                        }
+                                    }
+                                    
+                                    // Start loading AFTER quality is locked
+                                    this.hls.startLoad();
+
+                                    this.isReady.value = true;
+                                    this.isLoading.value = false;
+                                    this.videoElement.play().catch(() => {});
+                                });
+                                
+                                this.hls.on(Hls.Events.ERROR, (event, data) => {
+                                    if (data.fatal) {
+                                         this.isLoading.value = false;
+                                         this.error.value = `HLS Error: ${data.details}`;
+                                    }
+                                });
+            
+                            } else if (this.videoElement.canPlayType('application/vnd.apple.mpegurl')) {
+                                this.videoElement.src = getProxyUrlFn(url);
+                                this.videoElement.addEventListener('loadedmetadata', () => {
+                                    this.isReady.value = true;
+                                    this.isLoading.value = false;
+                                    this.videoElement.play();
+                                });
+                            }
+                        }
+                    }
+
+        window.initApp = () => {
+            const { createApp, ref, computed, onMounted, onUnmounted, watch } = Vue;
+
+            createApp({
+                setup() {
+                    // --- Services ---
+                    const transcoder = new TranscoderService();
+                    const player = new VideoPlayerService();
+
+                    // --- State ---
+                    const url = ref('');
+                    const filename = ref('video');
+                    const exportFormat = ref('mp4');
+                    const segments = ref([]); 
+                    const selectedSegments = ref(new Set()); 
+                    const isDownloading = ref(false);
+                    const isExporting = ref(false);
+                    const downloadFinished = ref(false);
+                    const error = ref('');
+                    const statusMessage = ref('就绪');
+                    
+                    // Advanced
+                    const showAdvanced = ref(false);
+                    const customHeaders = ref('');
+                    const concurrency = ref(6); // Default concurrency
+                    const variants = ref([]);
+                    const audioTracks = ref([]); // New: Audio Tracks
+                    const subtitles = ref([]);   // New: Subtitles
+                    const currentVariant = ref(null);
+                    const timelineTheme = ref('default'); // default, high-contrast, ocean
+                    const isLive = ref(false);
+                    const isRecording = ref(false);
+                    const recordingInterval = ref(null);
+                    
+                    // Timeline
+                    const timelineRef = ref(null);
+                    const isSelecting = ref(false);
+                    const selectionMode = ref('add');
+                    const selectionStart = ref(0);
+                    const selectionCurrent = ref(0);
+                    const totalDuration = ref(0);
+
+                    // Queue
+                    const downloadQueue = ref([]);
+                    const activeDownloads = ref([]);
+                    const completedSegments = ref(new Map()); 
+                    const failedSegments = ref([]);
+                    const CONCURRENCY = 6;
+
+                    // Refs
+                    const videoRef = ref(null);
+
+                    // --- Computed ---
+                    const selectedCount = computed(() => selectedSegments.value.size);
+                    const selectedDuration = computed(() => {
+                        let d = 0;
+                        segments.value.forEach(s => {
+                            if (selectedSegments.value.has(s.index)) d += s.duration;
+                        });
+                        return d;
+                    });
+                    const downloadableCount = computed(() => {
+                        return segments.value.filter(s => selectedSegments.value.has(s.index) && !completedSegments.value.has(s.index)).length;
+                    });
+                    const exportableCount = computed(() => {
+                        let count = 0;
+                        selectedSegments.value.forEach(idx => {
+                            if (completedSegments.value.has(idx)) count++;
+                        });
+                        return count;
+                    });
+                    const downloadedCount = computed(() => completedSegments.value.size);
+                    const progress = computed(() => {
+                        if (selectedCount.value === 0) return 0;
+                        return Math.floor((downloadedCount.value / selectedCount.value) * 100);
+                    });
+                    const estimateSize = computed(() => (selectedCount.value * 1.5).toFixed(1));
+
+                    const visualizationSegments = computed(() => {
+                        if (segments.value.length === 0) return [];
+                        return segments.value.map(s => ({...s}));
+                    });
+
+                    const selectionStyle = computed(() => {
+                        if (!timelineRef.value) return {};
+                        const startX = Math.min(selectionStart.value, selectionCurrent.value);
+                        const width = Math.abs(selectionCurrent.value - selectionStart.value);
+                        return { left: startX + 'px', width: width + 'px' };
+                    });
+
+                    const initSegment = ref(null); // New: Init Segment for fMP4
+                    
+                    // --- Methods ---
+
+                    const getProxyUrl = (targetUrl) => {
+                        let finalUrl = `/proxy?url=${encodeURIComponent(targetUrl)}`;
+                        if (customHeaders.value.trim()) {
+                            try {
+                                JSON.parse(customHeaders.value);
+                                finalUrl += `&headers=${encodeURIComponent(customHeaders.value)}`;
+                            } catch (e) {}
+                        }
+                        return finalUrl;
+                    };
+
+                    const initPlayer = (m3u8Url) => {
+                        player.loadSource(m3u8Url, getProxyUrl, async (segmentUrl, data, frag) => {
+                            // 0. Handle Init Segment (fMP4)
+                            if (frag && (frag.sn === 'initSegment' || frag.type === 'init')) {
+                                console.log('[Cache] Captured Init Segment');
+                                initSegment.value = new Blob([data]);
+                                return;
+                            }
+
+                            // 1. Precise Match by Sequence Number
+                            let seg = null;
+                            if (frag && typeof frag.sn === 'number') {
+                                seg = segments.value.find(s => s.index === frag.sn);
+                            }
+
+                            // 2. Fallback to URL + ByteRange matching
+                            if (!seg) {
+                                seg = segments.value.find(s => {
+                                    // Check URL match
+                                    const urlMatch = s.url === segmentUrl || segmentUrl.endsWith(s.url) || s.url.endsWith(segmentUrl);
+                                    if (!urlMatch) return false;
+                                    
+                                    // If segment has byteRange, we MUST match it
+                                    if (s.byteRange && frag.byteRange) {
+                                        // frag.byteRange is [start, end]
+                                        // s.byteRange is { offset, length }
+                                        // offset should match start
+                                        return s.byteRange.offset === frag.byteRange[0];
+                                    }
+                                    return true;
+                                });
+                            }
+                            
+                            // 3. Fallback to Pathname matching (only if no byteRange involved)
+                            if (!seg) {
+                                try {
+                                    const segUrlObj = new URL(segmentUrl);
+                                    seg = segments.value.find(s => {
+                                        if (s.byteRange) return false; // Don't fuzzy match byte-ranged segments
+                                        try {
+                                            const sUrlObj = new URL(s.url);
+                                            return sUrlObj.pathname === segUrlObj.pathname;
+                                        } catch(e) { return false; }
+                                    });
+                                } catch(e) {}
+                            }
+
+                            if (seg && !completedSegments.value.has(seg.index)) {
+                                // console.log(`[Cache] Cached segment ${seg.index} from player`);
+                                // DECRYPTION LOGIC FOR SHARED CACHE
+                                let finalData = data;
+                                if(seg.key) {
+                                    try {
+                                        // We need to fetch the key if we haven't cached it yet? 
+                                        // Actually, if we are here, Hls.js has already fetched the key internally.
+                                        // But we don't have access to Hls.js's internal key cache easily.
+                                        // So we might need to fetch it again or maintain our own key cache.
+                                        // To avoid re-fetching, we should ideally hook into key loading too, but for now let's reuse fetchSegment's logic
+                                        // However, calling fetch inside this sync callback might be tricky if not careful, but this is async now.
+                                        
+                                        let keyData = null;
+                                        if(keyCache.has(seg.key.uri)) keyData = keyCache.get(seg.key.uri);
+                                        else {
+                                            const res = await fetch(getProxyUrl(seg.key.uri));
+                                            if(!res.ok) throw new Error("Key error");
+                                            keyData = await res.arrayBuffer();
+                                            keyCache.set(seg.key.uri, keyData);
+                                        }
+
+                                        const keyObj = await window.crypto.subtle.importKey("raw", keyData, {name:"AES-CBC"}, false, ["decrypt"]);
+                                        let ivBuf;
+                                        if (typeof seg.key.iv === 'string') {
+                                            const hex = seg.key.iv.startsWith('0x') ? seg.key.iv.slice(2) : seg.key.iv;
+                                            ivBuf = new Uint8Array(hex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+                                        } else {
+                                            const buffer = new ArrayBuffer(16);
+                                            const view = new DataView(buffer);
+                                            view.setUint32(12, seg.index); 
+                                            ivBuf = new Uint8Array(buffer);
+                                        }
+                                        finalData = await window.crypto.subtle.decrypt({name:"AES-CBC", iv: ivBuf}, keyObj, data);
+                                    } catch(e) {
+                                        console.error("Decryption failed in shared cache:", e);
+                                        return; // Don't cache bad data
+                                    }
+                                }
+                                
+                                completedSegments.value.set(seg.index, new Blob([finalData]));
+                            }
+                        });
+                    };
+
+                    const parseM3u8 = async (targetUrl = null, directContent = null) => {
+                        const urlToParse = targetUrl || url.value;
+                        if (!urlToParse && !directContent) return;
+                        
+                        if (!targetUrl) {
+                            segments.value = [];
+                            selectedSegments.value.clear();
+                            completedSegments.value.clear();
+                            variants.value = [];
+                            totalDuration.value = 0;
+                        }
+
+                        try {
+                            // Moved initPlayer to AFTER parsing to prevent race condition (Segment #1 status sync)
+                            
+                            let text = directContent;
+                            if (!text) {
+                                const res = await fetch(getProxyUrl(urlToParse));
+                                if (!res.ok) throw new Error("Fetch failed");
+                                text = await res.text();
+                            }
+
+                            // Master Playlist Check
+                            if (text.includes('#EXT-X-STREAM-INF')) {
+                                const lines = text.split('\n');
+                                variants.value = [];
+                                audioTracks.value = [];
+                                subtitles.value = [];
+                                
+                                for(let i=0; i<lines.length; i++) {
+                                    const line = lines[i].trim();
+                                    
+                                    // Parse Media Groups (Audio/Subs)
+                                    if(line.startsWith('#EXT-X-MEDIA:')) {
+                                        const typeMatch = line.match(/TYPE=([^,]+)/);
+                                        const uriMatch = line.match(/URI="([^"]+)"/);
+                                        const nameMatch = line.match(/NAME="([^"]+)"/);
+                                        const langMatch = line.match(/LANGUAGE="([^"]+)"/);
+                                        const groupIdMatch = line.match(/GROUP-ID="([^"]+)"/);
+                                        
+                                        if(typeMatch && uriMatch) {
+                                            const item = {
+                                                type: typeMatch[1],
+                                                url: new URL(uriMatch[1], urlToParse).href,
+                                                name: nameMatch ? nameMatch[1] : 'Unknown',
+                                                lang: langMatch ? langMatch[1] : '',
+                                                groupId: groupIdMatch ? groupIdMatch[1] : ''
+                                            };
+                                            if(item.type === 'AUDIO') audioTracks.value.push(item);
+                                            if(item.type === 'SUBTITLES') subtitles.value.push(item);
+                                        }
+                                    }
+
+                                    if(line.startsWith('#EXT-X-STREAM-INF')) {
+                                        const res = line.match(/RESOLUTION=(\d+)x(\d+)/);
+                                        const bw = line.match(/BANDWIDTH=(\d+)/);
+                                        let j = i+1;
+                                        while(j < lines.length && lines[j].startsWith('#')) j++;
+                                        if(j < lines.length) {
+                                            variants.value.push({
+                                                url: new URL(lines[j], urlToParse).href,
+                                                resolution: res ? {width:res[1], height:res[2]} : null,
+                                                bandwidth: bw ? parseInt(bw[1]) : 0
+                                            });
+                                        }
+                                        i=j;
+                                    }
+                                }
+                                if(!targetUrl && variants.value.length > 0) {
+                                    initPlayer(urlToParse);
+                                    return;
+                                }
+                            }
+
+                            // Media Playlist Parsing
+                            const lines = text.split('\n');
+                            const newSegments = [];
+                            let dur = 0;
+                            let currentKey = null;
+                            let seq = 0;
+                            const seqMatch = text.match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/);
+                            if(seqMatch) seq = parseInt(seqMatch[1]);
+
+                            for(let i=0; i<lines.length; i++) {
+                                const line = lines[i].trim();
+                                if(line.startsWith('#EXT-X-KEY')) {
+                                    const method = line.match(/METHOD=([^,]+)/);
+                                    const uri = line.match(/URI="([^"]+)"/);
+                                    const iv = line.match(/IV=([^,]+)/);
+                                    if(method && method[1] === 'AES-128') {
+                                        currentKey = {
+                                            method: 'AES-128',
+                                            uri: new URL(uri[1], urlToParse).href,
+                                            iv: iv ? iv[1] : null
+                                        };
+                                    } else { currentKey = null; }
+                                }
+                                if(line.startsWith('#EXTINF:')) {
+                                    const d = parseFloat(line.match(/[\d.]+/)[0]);
+                                    let j = i+1;
+                                    while(j < lines.length && lines[j].startsWith('#')) j++;
+                                    if(j < lines.length) {
+                                        const segUrl = new URL(lines[j], urlToParse).href;
+                                        newSegments.push({
+                                            index: seq + newSegments.length,
+                                            url: segUrl,
+                                            duration: d,
+                                            start: dur,
+                                            key: currentKey
+                                        });
+                                        dur += d;
+                                    }
+                                    i=j;
+                                }
+                            }
+
+                            if(newSegments.length > 0) {
+                                segments.value = newSegments;
+                                totalDuration.value = dur;
+                                selectAll();
+                                // Proactively load transcoder
+                                if(!transcoder.isLoaded.value) transcoder.load();
+                                
+                                if (!targetUrl && !directContent) initPlayer(urlToParse);
+                            }
+
+                        } catch(e) {
+                            error.value = e.message;
+                            player.isLoading.value = false;
+                        }
+                    };
+
+                    const handleFile = async (e) => {
+                        const file = e.target.files[0];
+                        if(!file) return;
+                        const text = await file.text();
+                        await parseM3u8(url.value || 'http://localhost/', text);
+                    };
+
+                    const selectVariant = (v) => {
+                        currentVariant.value = v;
+                        parseM3u8(v.url);
+                    };
+
+                    const selectAll = () => segments.value.forEach(s => selectedSegments.value.add(s.index));
+                    const clearSelection = () => selectedSegments.value.clear();
+                    const selectSmart = (durationLimit = 300) => {
+                        selectedSegments.value.clear();
+                        let d = 0;
+                        const targetSegments = durationLimit < 0 
+                            ? [...segments.value].reverse() 
+                            : segments.value;
+                        
+                        const limit = Math.abs(durationLimit);
+
+                        for(const s of targetSegments) {
+                            if(d > limit) break;
+                            selectedSegments.value.add(s.index);
+                            d += s.duration;
+                        }
+                    };
+                    const toggleSegmentSelection = (s) => {
+                        if(selectedSegments.value.has(s.index)) selectedSegments.value.delete(s.index);
+                        else selectedSegments.value.add(s.index);
+                    };
+
+                    const startDownload = () => {
+                        if(selectedCount.value === 0) return;
+                        isDownloading.value = true;
+                        downloadFinished.value = false;
+                        statusMessage.value = "开始下载...";
+                        
+                        // Only download selected AND not yet completed segments
+                        const list = segments.value.filter(s => selectedSegments.value.has(s.index) && !completedSegments.value.has(s.index));
+                        if(list.length === 0) {
+                            downloadFinished.value = true;
+                            isDownloading.value = false;
+                            statusMessage.value = "已全部下载";
+                            return;
+                        }
+                        
+                        downloadQueue.value = list.map(s => ({...s}));
+                        processQueue();
+                    };
+
+                    const processQueue = async () => {
+                        if(!isDownloading.value && !isRecording.value) return;
+                        
+                        // Dynamic Concurrency
+                        while(activeDownloads.value.length < concurrency.value && downloadQueue.value.length > 0) {
+                            const seg = downloadQueue.value.shift();
+                            activeDownloads.value.push(seg);
+                            
+                            fetchSegment(seg).then(() => {
+                                activeDownloads.value = activeDownloads.value.filter(s => s.index !== seg.index);
+                                processQueue();
+                            }).catch(() => {
+                                activeDownloads.value = activeDownloads.value.filter(s => s.index !== seg.index);
+                                failedSegments.value.push(seg);
+                                processQueue();
+                            });
+                        }
+
+                        if(activeDownloads.value.length === 0 && downloadQueue.value.length === 0) {
+                            const pending = segments.value.filter(s => selectedSegments.value.has(s.index) && !completedSegments.value.has(s.index)).length;
+                            if(pending === 0 && !isRecording.value) {
+                                downloadFinished.value = true;
+                                isDownloading.value = false;
+                                statusMessage.value = "下载完成";
+                            }
+                        }
+                    };
+
+                    const keyCache = new Map();
+                    const fetchSegment = async (seg) => {
+                        let keyData = null;
+                        if(seg.key) {
+                            if(keyCache.has(seg.key.uri)) keyData = keyCache.get(seg.key.uri);
+                            else {
+                                const res = await fetch(getProxyUrl(seg.key.uri));
+                                if(!res.ok) throw new Error("Key error");
+                                keyData = await res.arrayBuffer();
+                                keyCache.set(seg.key.uri, keyData);
+                            }
+                        }
+
+                        const res = await fetch(getProxyUrl(seg.url));
+                        if(!res.ok) throw new Error("Seg error");
+                        let data = await res.arrayBuffer();
+
+                        if(keyData) {
+                            const keyObj = await window.crypto.subtle.importKey("raw", keyData, {name:"AES-CBC"}, false, ["decrypt"]);
+                            let ivBuf;
+                            if (typeof seg.key.iv === 'string') {
+                                const hex = seg.key.iv.startsWith('0x') ? seg.key.iv.slice(2) : seg.key.iv;
+                                ivBuf = new Uint8Array(hex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+                            } else {
+                                const buffer = new ArrayBuffer(16);
+                                const view = new DataView(buffer);
+                                view.setUint32(12, seg.index); 
+                                ivBuf = new Uint8Array(buffer);
+                            }
+                            data = await window.crypto.subtle.decrypt({name:"AES-CBC", iv: ivBuf}, keyObj, data);
+                        }
+
+                        completedSegments.value.set(seg.index, new Blob([data]));
+                    };
+
+                    const cancelDownload = () => {
+                        isDownloading.value = false;
+                        isRecording.value = false;
+                        if(recordingInterval.value) clearInterval(recordingInterval.value);
+                        downloadQueue.value = [];
+                        statusMessage.value = "已停止";
+                    };
+
+                    const toggleRecording = () => {
+                        if(isRecording.value) {
+                            cancelDownload();
+                        } else {
+                            isRecording.value = true;
+                            isDownloading.value = true;
+                            statusMessage.value = "录制中...";
+                            recordingInterval.value = setInterval(async () => {
+                                await parseM3u8(url.value);
+                                startDownload();
+                            }, 5000);
+                            startDownload();
+                        }
+                    };
+
+                    const exportFile = async () => {
+                        if(isExporting.value) return;
+                        isExporting.value = true;
+                        
+                        const blobs = [];
+                        // Prepend Init Segment if available (Critical for fMP4)
+                        if (initSegment.value) {
+                             blobs.push(initSegment.value);
+                             console.log("[Export] Included Init Segment");
+                        }
+
+                        const sorted = [...selectedSegments.value].sort((a,b)=>a-b);
+                        for(const i of sorted) {
+                            if(completedSegments.value.has(i)) blobs.push(completedSegments.value.get(i));
+                        }
+                        
+                        if(blobs.length === 0) { alert("无数据或未选择已下载片段"); isExporting.value=false; return; }
+
+                        if(exportFormat.value === 'ts') {
+                            // Try FFmpeg Remux first for TS to fix timestamps
+                            try {
+                                statusMessage.value = "正在修复 TS 时间轴 (FFmpeg)...";
+                                // Check size to avoid obvious OOM (e.g. > 500MB)
+                                const totalSize = blobs.reduce((acc, b) => acc + b.size, 0);
+                                if (totalSize > 500 * 1024 * 1024) {
+                                    throw new Error("File too large for WASM remux");
+                                }
+                                
+                                const tsBlob = await transcoder.transcode(blobs, filename.value, 'ts');
+                                const u = URL.createObjectURL(tsBlob);
+                                const a = document.createElement('a');
+                                a.href = u; a.download = filename.value + '.ts';
+                                a.click();
+                            } catch (e) {
+                                console.warn("FFmpeg Remux failed, falling back to direct merge", e);
+                                // Fallback to Direct Merge
+                                statusMessage.value = "使用直接拼接导出...";
+                                const b = new Blob(blobs, {type:'video/mp2t'});
+                                const u = URL.createObjectURL(b);
+                                const a = document.createElement('a');
+                                a.href = u; a.download = filename.value + '.ts';
+                                a.click();
+                                if (!e.message.includes("File too large")) {
+                                     // Only alert if it wasn't our proactive check
+                                     alert("提示：尝试修复时间轴失败，已导出原始拼接文件。\n若播放异常，请尝试使用 VLC 播放器。");
+                                }
+                            }
+                        } else {
+                            try {
+                                const mp4Blob = await transcoder.transcode(blobs, filename.value, 'mp4');
+                                const u = URL.createObjectURL(mp4Blob);
+                                const a = document.createElement('a');
+                                a.href = u; a.download = filename.value + '.mp4';
+                                a.click();
+                            } catch (e) {
+                                alert("导出失败: " + e.message);
+                            }
+                        }
+                        isExporting.value = false;
+                        statusMessage.value = "导出完成";
+                    };
+
+                    const formatTime = (s) => {
+                        const h = Math.floor(s/3600);
+                        const m = Math.floor((s%3600)/60);
+                        const sec = Math.floor(s%60);
+                        return `${h}:${m.toString().padStart(2,'0')}:${sec.toString().padStart(2,'0')}`;
+                    };
+
+                    const startSelection = (e) => {
+                        if(!timelineRef.value) return;
+                        isSelecting.value = true;
+                        const rect = timelineRef.value.getBoundingClientRect();
+                        selectionStart.value = e.clientX - rect.left;
+                        selectionCurrent.value = selectionStart.value;
+                        const pct = selectionStart.value / rect.width;
+                        const t = pct * totalDuration.value;
+                        const s = segments.value.find(seg => t >= seg.start && t < seg.start + seg.duration);
+                        if(s && selectedSegments.value.has(s.index)) selectionMode.value = 'remove';
+                        else selectionMode.value = 'add';
+                    };
+                    const updateSelection = (e) => {
+                        if(!isSelecting.value) return;
+                        const rect = timelineRef.value.getBoundingClientRect();
+                        selectionCurrent.value = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
+                    };
+                    const endSelection = () => {
+                        if(!isSelecting.value) return;
+                        isSelecting.value = false;
+                        const rect = timelineRef.value.getBoundingClientRect();
+                        const min = Math.min(selectionStart.value, selectionCurrent.value);
+                        const max = Math.max(selectionStart.value, selectionCurrent.value);
+                        if(max - min < 5) return;
+                        
+                        const startT = (min / rect.width) * totalDuration.value;
+                        const endT = (max / rect.width) * totalDuration.value;
+                        
+                        segments.value.forEach(s => {
+                            const mid = s.start + s.duration/2;
+                            if(mid >= startT && mid <= endT) {
+                                if(selectionMode.value === 'add') selectedSegments.value.add(s.index);
+                                else selectedSegments.value.delete(s.index);
+                            }
+                        });
+                    };
+
+                    const requestPiP = async () => {
+                        if (document.pictureInPictureElement) {
+                            await document.exitPictureInPicture();
+                        } else if (player.videoElement) {
+                            try {
+                                await player.videoElement.requestPictureInPicture();
+                            } catch (e) { console.error(e); }
+                        }
+                    };
+
+                    onMounted(() => {
+                        player.mount(videoRef.value);
+                        transcoder.load();
+                    });
+
+                    onUnmounted(() => {
+                        player.unmount();
+                    });
+
+                    // Expose methods for self-test
+                    window.testModules = async () => {
+                        console.log("Running Modules Self-Test...");
+                        try {
+                            if (!transcoder.isLoaded.value) await transcoder.load();
+                            console.assert(transcoder.isLoaded.value, "Transcoder failed to load");
+                            console.log("✅ Transcoder Service OK");
+                            
+                            console.assert(player.videoElement, "Player not mounted");
+                            console.log("✅ Player Service OK");
+                            alert("Self-Test Passed!");
+                        } catch (e) {
+                            console.error("Test Failed", e);
+                            alert("Test Failed: " + e.message);
+                        }
+                    };
+
+                    return {
+                        url, filename, exportFormat, error, statusMessage, isDownloading, isExporting, downloadFinished,
+                        segments, selectedSegments, selectedCount, selectedDuration, totalDuration, estimateSize, progress, downloadedCount,
+                        downloadableCount, exportableCount,
+                        activeDownloads, failedSegments, completedSegments,
+                        videoRef, timelineRef, isSelecting, selectionStyle, selectionMode,
+                        visualizationSegments, 
+                        
+                        // Service State Mapping
+                        playerStats: player.stats,
+                        isPlayerReady: player.isReady,
+                        isPlayerLoading: player.isLoading,
+                        ffmpegLoaded: transcoder.isLoaded,
+                        ffmpegLoading: transcoder.isLoading,
+                        ffmpegStatus: transcoder.status,
+                        ffmpegLoadProgress: transcoder.loadProgress,
+                        
+                        showAdvanced, customHeaders, concurrency, timelineTheme,
+                        variants, audioTracks, subtitles, currentVariant,
+                        isLive, isRecording, 
+                        
+                        parseM3u8, handleFile, selectVariant,
+                        selectAll, clearSelection, selectSmart, toggleSegmentSelection,
+                        startDownload, cancelDownload, toggleRecording, exportFile,
+                        loadFFmpeg: () => transcoder.load(),
+                        startSelection, updateSelection, endSelection, formatTime, requestPiP
+                    };
+                }
+            }).mount('#app');
+        };
+
+        if(window.libsLoaded) window.initApp();
+    </script>
+</body>
+</html>
