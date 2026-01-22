@@ -673,13 +673,19 @@
 
                     <!-- Main Actions -->
                     <div style="display:flex; flex-direction:column; gap:12px; margin-top:8px;">
-                        <button v-if="!isDownloading && !isRecording" 
-                                class="btn btn-glow" 
-                                :disabled="downloadableCount === 0" 
-                                @click="startDownload">
-                            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                            开始下载 ({{ downloadableCount }})
-                        </button>
+                        <div style="display:flex; gap:10px;" v-if="!isDownloading && !isRecording">
+                            <button class="btn btn-glow" 
+                                    :disabled="downloadableCount === 0" 
+                                    @click="startDownload" style="flex:1;">
+                                <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                                立即下载
+                            </button>
+                            <button class="btn btn-glass" 
+                                    :disabled="downloadableCount === 0" 
+                                    @click="addTaskToQueue" title="加入后台队列" style="padding:0 16px;">
+                                ➕ 队列
+                            </button>
+                        </div>
 
                         <button v-if="isLive && !downloadFinished && !isDownloading"
                                 class="btn btn-danger" 
@@ -739,6 +745,48 @@
                              @click="toggleSegmentSelection(seg)">
                              <div class="tooltip">#{{ seg.index }} ({{ seg.duration }}s)</div>
                         </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Task Queue Panel -->
+        <div v-if="tasks.length > 0" class="glass-panel">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                <h3 style="margin:0; font-size:1.1rem;">后台任务队列 ({{ tasks.length }})</h3>
+            </div>
+            
+            <div style="display:flex; flex-direction:column; gap:12px;">
+                <div v-for="task in tasks" :key="task.id" style="background:rgba(0,0,0,0.2); padding:16px; border-radius:12px; border:1px solid var(--glass-border); display:flex; gap:16px; align-items:center;">
+                    <!-- Status Icon -->
+                    <div style="width:40px; height:40px; border-radius:10px; display:flex; align-items:center; justify-content:center; flex-shrink:0;"
+                         :style="{ background: task.status === 'completed' ? 'var(--success)' : task.status === 'running' ? 'var(--primary)' : 'rgba(255,255,255,0.1)' }">
+                         <span v-if="task.status === 'completed'">✅</span>
+                         <span v-else-if="task.status === 'running'" class="spinner" style="width:20px; height:20px; border-width:2px;"></span>
+                         <span v-else-if="task.status === 'pending'">⏳</span>
+                         <span v-else>⏸</span>
+                    </div>
+                    
+                    <!-- Info -->
+                    <div style="flex:1; min-width:0;">
+                        <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                            <strong style="font-size:0.95rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" :title="task.filename">{{ task.filename }}</strong>
+                            <span style="font-size:0.85rem; font-family:monospace;">{{ task.progress }}%</span>
+                        </div>
+                        <div style="height:4px; background:rgba(255,255,255,0.1); border-radius:2px; overflow:hidden;">
+                            <div :style="{ width: task.progress + '%', background: task.status === 'completed' ? 'var(--success)' : 'var(--primary)' }" style="height:100%; transition:width 0.3s;"></div>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; font-size:0.75rem; color:var(--text-muted); margin-top:4px;">
+                            <span>{{ task.completedSegments.size }} / {{ task.selectedSegments.size }} Segments</span>
+                            <span>{{ task.status }}</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Actions -->
+                    <div style="display:flex; gap:8px;">
+                        <button v-if="task.status === 'completed'" class="btn btn-sm btn-success" @click="exportTask(task, 'mp4')" title="导出 MP4">MP4</button>
+                        <button v-if="task.status === 'completed'" class="btn btn-sm btn-success" @click="exportTask(task, 'ts')" title="导出 TS">TS</button>
+                        <button class="btn btn-sm btn-danger" @click="removeTask(task)" title="移除任务">✕</button>
                     </div>
                 </div>
             </div>
@@ -826,7 +874,7 @@
                     });
 
                     // 3. Load Core (This downloads the big .wasm file)
-                    this.status.value = '下载并编译 WASM (约25MB)...';
+                    this.status.value = '下载并编译 WASM (约30MB)...';
                     // Mock progress since v0.11 load() doesn't report download progress well
                     let mockProgress = 20;
                     const timer = setInterval(() => {
@@ -1119,7 +1167,217 @@
 
                     const initSegment = ref(null); // New: Init Segment for fMP4
                     
+                    // --- Task Queue State ---
+                    const tasks = ref([]);
+                    
+                    class Task {
+                        constructor(meta) {
+                            this.id = Date.now().toString(36) + Math.random().toString(36).substr(2);
+                            this.url = meta.url;
+                            this.filename = meta.filename || 'video';
+                            this.status = 'pending'; // pending, running, completed, paused, error
+                            this.progress = 0;
+                            // Deep copy segments to avoid reference issues if Workspace changes
+                            this.segments = meta.segments.map(s => ({...s})); 
+                            this.selectedSegments = new Set(meta.selectedSegments);
+                            this.completedSegments = new Map(meta.completedSegments); // Copy existing blobs
+                            this.initSegment = meta.initSegment;
+                            this.customHeaders = meta.customHeaders;
+                            this.concurrency = meta.concurrency || 6;
+                            this.createdTime = new Date();
+                            
+                            this.downloadQueue = [];
+                            this.activeDownloads = [];
+                            this.failedSegments = [];
+                            this.keyCache = new Map();
+                            this.retryCounts = new Map();
+                            this.error = '';
+                        }
+                    }
+                    
                     // --- Methods ---
+
+                    // Task Queue Logic
+                    const fetchTaskSegment = async (task, seg) => {
+                        const getTaskProxyUrl = (u) => {
+                             let final = `/proxy?url=${encodeURIComponent(u)}`;
+                             if(task.customHeaders && task.customHeaders.trim()) {
+                                 final += `&headers=${encodeURIComponent(task.customHeaders)}`;
+                             }
+                             return final;
+                        };
+
+                        let keyData = null;
+                        if(seg.key) {
+                            if(task.keyCache.has(seg.key.uri)) keyData = task.keyCache.get(seg.key.uri);
+                            else {
+                                const res = await fetch(getTaskProxyUrl(seg.key.uri));
+                                if(!res.ok) throw new Error("Key error");
+                                keyData = await res.arrayBuffer();
+                                task.keyCache.set(seg.key.uri, keyData);
+                            }
+                        }
+
+                        const res = await fetch(getTaskProxyUrl(seg.url));
+                        if(!res.ok) throw new Error("Seg error");
+                        let data = await res.arrayBuffer();
+
+                        if(keyData) {
+                             const keyObj = await window.crypto.subtle.importKey("raw", keyData, {name:"AES-CBC"}, false, ["decrypt"]);
+                             let ivBuf;
+                             if (typeof seg.key.iv === 'string') {
+                                 const hex = seg.key.iv.startsWith('0x') ? seg.key.iv.slice(2) : seg.key.iv;
+                                 ivBuf = new Uint8Array(hex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+                             } else {
+                                 const buffer = new ArrayBuffer(16);
+                                 const view = new DataView(buffer);
+                                 view.setUint32(12, seg.index); 
+                                 ivBuf = new Uint8Array(buffer);
+                             }
+                             data = await window.crypto.subtle.decrypt({name:"AES-CBC", iv: ivBuf}, keyObj, data);
+                        }
+                        
+                        task.completedSegments.set(seg.index, new Blob([data]));
+                    };
+
+                    const updateTaskProgress = (task) => {
+                        const total = task.selectedSegments.size;
+                        const done = task.completedSegments.size;
+                        task.progress = total > 0 ? Math.floor((done / total) * 100) : 0;
+                    };
+
+                    const runTask = (task) => {
+                        if(task.status !== 'pending' && task.status !== 'paused') return;
+                        task.status = 'running';
+                        
+                        const processTaskInternal = () => {
+                            if(task.status !== 'running') return;
+                            
+                            if(task.downloadQueue.length === 0 && task.activeDownloads.length === 0) {
+                                task.status = 'completed';
+                                task.progress = 100;
+                                processGlobalQueue();
+                                return;
+                            }
+
+                            while(task.activeDownloads.length < task.concurrency && task.downloadQueue.length > 0) {
+                                const seg = task.downloadQueue.shift();
+                                task.activeDownloads.push(seg);
+                                
+                                fetchTaskSegment(task, seg).then(() => {
+                                    task.activeDownloads = task.activeDownloads.filter(s => s.index !== seg.index);
+                                    updateTaskProgress(task);
+                                    processTaskInternal();
+                                }).catch((e) => {
+                                    console.error(e);
+                                    task.activeDownloads = task.activeDownloads.filter(s => s.index !== seg.index);
+                                    const retries = task.retryCounts.get(seg.index) || 0;
+                                    if(retries < 3) {
+                                        task.retryCounts.set(seg.index, retries + 1);
+                                        task.downloadQueue.push(seg);
+                                    } else {
+                                        task.failedSegments.push(seg);
+                                    }
+                                    updateTaskProgress(task);
+                                    processTaskInternal();
+                                });
+                            }
+                        };
+                        processTaskInternal();
+                    };
+
+                    const processGlobalQueue = () => {
+                        const running = tasks.value.filter(t => t.status === 'running');
+                        const pending = tasks.value.filter(t => t.status === 'pending');
+                        const MAX_CONCURRENT_TASKS = 2;
+                        
+                        if (running.length < MAX_CONCURRENT_TASKS && pending.length > 0) {
+                            runTask(pending[0]);
+                            processGlobalQueue(); 
+                        }
+                    };
+
+                    const addTaskToQueue = () => {
+                        if(selectedCount.value === 0) return;
+                        
+                        const task = new Task({
+                            url: url.value,
+                            filename: filename.value,
+                            segments: segments.value,
+                            selectedSegments: selectedSegments.value,
+                            completedSegments: completedSegments.value,
+                            initSegment: initSegment.value,
+                            customHeaders: customHeaders.value,
+                            concurrency: concurrency.value
+                        });
+                        
+                        const list = task.segments.filter(s => task.selectedSegments.has(s.index) && !task.completedSegments.has(s.index));
+                        if(list.length === 0 && task.completedSegments.size > 0) {
+                            task.status = 'completed';
+                            task.progress = 100;
+                        } else {
+                            task.downloadQueue = list;
+                            task.status = 'pending';
+                        }
+                        
+                        tasks.value.push(task);
+                        processGlobalQueue();
+                        statusMessage.value = "已加入后台下载队列";
+                    };
+
+                    const removeTask = (task) => {
+                        task.status = 'paused';
+                        tasks.value = tasks.value.filter(t => t.id !== task.id);
+                        processGlobalQueue();
+                    };
+
+                    const exportTask = async (task, format) => {
+                        if(isExporting.value) return;
+                        isExporting.value = true;
+                        statusMessage.value = "正在导出任务: " + task.filename;
+
+                        try {
+                            const blobs = [];
+                            if (task.initSegment) blobs.push(task.initSegment);
+                            const sorted = [...task.selectedSegments].sort((a,b)=>a-b);
+                            for(const i of sorted) {
+                                if(task.completedSegments.has(i)) blobs.push(task.completedSegments.get(i));
+                            }
+                            
+                            if(blobs.length === 0) throw new Error("无数据");
+
+                            if(format === 'ts') {
+                                try {
+                                    const totalSize = blobs.reduce((acc, b) => acc + b.size, 0);
+                                    if (totalSize > 500 * 1024 * 1024) throw new Error("File too large");
+                                    
+                                    const tsBlob = await transcoder.transcode(blobs, task.filename, 'ts');
+                                    const u = URL.createObjectURL(tsBlob);
+                                    const a = document.createElement('a');
+                                    a.href = u; a.download = task.filename + '.ts';
+                                    a.click();
+                                } catch (e) {
+                                    const b = new Blob(blobs, {type:'video/mp2t'});
+                                    const u = URL.createObjectURL(b);
+                                    const a = document.createElement('a');
+                                    a.href = u; a.download = task.filename + '.ts';
+                                    a.click();
+                                }
+                            } else {
+                                const mp4Blob = await transcoder.transcode(blobs, task.filename, 'mp4');
+                                const u = URL.createObjectURL(mp4Blob);
+                                const a = document.createElement('a');
+                                a.href = u; a.download = task.filename + '.mp4';
+                                a.click();
+                            }
+                            statusMessage.value = "导出完成";
+                        } catch(e) {
+                            alert("导出失败: " + e.message);
+                        } finally {
+                            isExporting.value = false;
+                        }
+                    };
+
 
                     const getProxyUrl = (targetUrl) => {
                         let finalUrl = `/proxy?url=${encodeURIComponent(targetUrl)}`;
@@ -1638,6 +1896,7 @@
                     };
 
                     return {
+                        tasks, addTaskToQueue, removeTask, exportTask,
                         url, filename, exportFormat, error, statusMessage, isDownloading, isExporting, downloadFinished,
                         segments, selectedSegments, selectedCount, selectedDuration, totalDuration, estimateSize, progress, downloadedCount,
                         downloadableCount, exportableCount,
@@ -1645,6 +1904,9 @@
                         videoRef, timelineRef, isSelecting, selectionStyle, selectionMode,
                         visualizationSegments, 
                         
+                        // Task Queue
+                        tasks, addTaskToQueue, removeTask, exportTask,
+
                         // Service State Mapping
                         playerStats: player.stats,
                         isPlayerReady: player.isReady,
