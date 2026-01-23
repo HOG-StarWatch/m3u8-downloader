@@ -606,7 +606,7 @@
                              @mouseleave="endSelection"
                              :style="{ height: timelineScrollHeight + 'px' }">
 
-                            <div v-for="(seg, idx) in visibleSegments" :key="idx"
+                            <div v-for="seg in visibleSegments" :key="seg.index"
                                  class="seg-bar"
                                  :class="[
                                      selectedSegments.has(seg.index) ? 'selected' : 'default',
@@ -752,7 +752,7 @@
                             </div>
                         </template>
                         <template v-else>
-                            <div v-for="(seg, idx) in visibleSegments" :key="seg.index"
+                            <div v-for="seg in visibleSegments" :key="seg.index"
                                  class="grid-cell"
                                  :class="{
                                      'cell-err': failedSegments.find(f => f.index === seg.index),
