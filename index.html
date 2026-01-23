@@ -50,8 +50,6 @@
             overflow-x: hidden;
         }
 
-        [v-cloak] { display: none !important; }
-
         /* Scrollbar */
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
@@ -128,6 +126,7 @@
             font-weight: 700;
             margin: 0;
             background: linear-gradient(to right, #fff, #e0e7ff);
+            background-clip: text;
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             letter-spacing: -0.02em;
@@ -333,6 +332,9 @@
             background: rgba(0,0,0,0.2);
             border-radius: 16px;
             border: 1px solid var(--glass-border);
+            /* Performance Optimization: Browser native content visibility */
+            content-visibility: auto;
+            contain-intrinsic-size: 400px; 
         }
         .grid-cell {
             width: 10px; height: 10px;
@@ -433,7 +435,7 @@
     </script>
 </head>
 <body>
-    <div id="app" class="app-container" v-cloak>
+    <div id="app" class="app-container">
         <!-- Header -->
         <header class="glass-panel header">
             <div class="brand">
@@ -599,14 +601,12 @@
                     <div class="timeline-wrapper" :class="'theme-' + timelineTheme">
                         <div class="timeline-track"
                              ref="timelineRef"
-                             @scroll="handleTimelineScroll"
                              @mousedown="startSelection"
                              @mousemove="updateSelection"
                              @mouseup="endSelection"
-                             @mouseleave="endSelection"
-                             :style="{ height: timelineScrollHeight + 'px' }">
+                             @mouseleave="endSelection">
 
-                            <div v-for="seg in visibleSegments" :key="seg.index"
+                            <div v-for="seg in segments" :key="seg.index"
                                  class="seg-bar"
                                  :class="[
                                      selectedSegments.has(seg.index) ? 'selected' : 'default',
@@ -730,42 +730,24 @@
                     </div>
 
                     <!-- Grid -->
-                    <div class="grid-visualizer custom-scrollbar" @scroll="handleGridScroll"
-                         :style="{ height: gridScrollHeight + 'px' }">
+                    <div class="grid-visualizer custom-scrollbar">
                         <div v-if="segments.length === 0" style="width:100%; text-align:center; padding:40px; color:rgba(255,255,255,0.2);">
                             暂无分片数据
                         </div>
-                        <!-- Virtual Scroll: Only render visible segments when above threshold -->
-                        <template v-if="segments.length < CONFIG.VIRTUAL_SCROLL_THRESHOLD">
-                            <div v-for="seg in segments" :key="seg.index"
-                                 class="grid-cell"
-                                 :class="{
-                                     'cell-err': failedSegments.find(f => f.index === seg.index),
-                                     'cell-ok': completedSegments.has(seg.index) && selectedSegments.has(seg.index),
-                                     'cell-ok-dim': completedSegments.has(seg.index) && !selectedSegments.has(seg.index),
-                                     'cell-load': activeDownloads.find(s => s.index === seg.index),
-                                     'cell-sel': selectedSegments.has(seg.index) && !completedSegments.has(seg.index),
-                                     'cell-def': !selectedSegments.has(seg.index) && !completedSegments.has(seg.index)
-                                 }"
-                                 @click="toggleSegmentSelection(seg)">
-                                <div class="tooltip">#{{ seg.index }} ({{ seg.duration }}s)</div>
-                            </div>
-                        </template>
-                        <template v-else>
-                            <div v-for="seg in visibleSegments" :key="seg.index"
-                                 class="grid-cell"
-                                 :class="{
-                                     'cell-err': failedSegments.find(f => f.index === seg.index),
-                                     'cell-ok': completedSegments.has(seg.index) && selectedSegments.has(seg.index),
-                                     'cell-ok-dim': completedSegments.has(seg.index) && !selectedSegments.has(seg.index),
-                                     'cell-load': activeDownloads.find(s => s.index === seg.index),
-                                     'cell-sel': selectedSegments.has(seg.index) && !completedSegments.has(seg.index),
-                                     'cell-def': !selectedSegments.has(seg.index) && !completedSegments.has(seg.index)
-                                 }"
-                                 @click="toggleSegmentSelection(seg)">
-                                <div class="tooltip">#{{ seg.index }} ({{ seg.duration }}s)</div>
-                            </div>
-                        </template>
+                        
+                        <div v-for="seg in segments" :key="seg.index"
+                                class="grid-cell"
+                                :class="{
+                                    'cell-err': failedSegments.find(f => f.index === seg.index),
+                                    'cell-ok': completedSegments.has(seg.index) && selectedSegments.has(seg.index),
+                                    'cell-ok-dim': completedSegments.has(seg.index) && !selectedSegments.has(seg.index),
+                                    'cell-load': activeDownloads.find(s => s.index === seg.index),
+                                    'cell-sel': selectedSegments.has(seg.index) && !completedSegments.has(seg.index),
+                                    'cell-def': !selectedSegments.has(seg.index) && !completedSegments.has(seg.index)
+                                }"
+                                @click="toggleSegmentSelection(seg)">
+                            <div class="tooltip">#{{ seg.index }} ({{ seg.duration }}s)</div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -828,11 +810,6 @@
 
             // Timing settings
             RECORDING_INTERVAL: 5000,
-
-            // Performance settings
-            VIRTUAL_SCROLL_THRESHOLD: 500,  // Threshold for enabling virtual scroll
-            GRID_CELL_HEIGHT: 48,          // Grid cell height for calculation
-            GRID_CELL_WIDTH: 48,           // Grid cell width for calculation
 
             // Security
             MAX_URL_LENGTH: 2000
@@ -1084,131 +1061,136 @@
          * Video Player Component Service
          * Manages Hls.js instance and Video Element
          */
-                    class VideoPlayerService {
-                        constructor() {
-                            this.hls = null;
-                            this.videoElement = null;
-                            this.isReady = Vue.ref(false);
-                            this.isLoading = Vue.ref(false);
-                            this.error = Vue.ref(null);
-                            this.stats = Vue.ref({ bitrate: 0, resolution: '' });
-                        }
-            
-                        mount(videoEl) {
-                            this.videoElement = videoEl;
-                        }
-            
-                        unmount() {
-                            this.destroy();
-                            this.videoElement = null;
-                        }
-            
-                        destroy() {
-                            if (this.hls) {
-                                this.hls.destroy();
-                                this.hls = null;
-                            }
-                            this.isReady.value = false;
-                            this.isLoading.value = false;
-                        }
-            
-                        loadSource(url, getProxyUrlFn, onSegmentLoaded) {
-                            if (!this.videoElement) return;
-                            this.destroy();
-                            this.isLoading.value = true;
-                            this.error.value = null;
-            
-                            if (Hls.isSupported()) {
-                                // Custom Proxy Loader Definition
-                                class ProxyLoader extends Hls.DefaultConfig.loader {
-                                    load(context, config, callbacks) {
-                                        const proxyContext = { ...context };
-                                        if (context.url.startsWith('http') && !context.url.includes('/proxy?url=')) {
-                                            proxyContext.url = getProxyUrlFn(context.url);
-                                        }
-                                        
-                                        const originalOnSuccess = callbacks.onSuccess;
-                                        callbacks.onSuccess = (response, stats, ctx) => {
-                                            response.url = context.url;
-                                            if (ctx) ctx.url = context.url;
-                                            
-                                            // Cache Interception
-                                            if (onSegmentLoaded && response.data) {
-                                                // Pass context.frag to get sequence number directly
-                                                onSegmentLoaded(context.url, response.data, context.frag);
-                                            }
-            
-                                            originalOnSuccess(response, stats, ctx);
-                                        };
-                                        super.load(proxyContext, config, callbacks);
-                                    }
-                                }
-            
-                                this.hls = new Hls({
-                                    autoStartLoad: false, // Prevent auto loading to ensure quality lock
-                                    enableWorker: true,
-                                    loader: ProxyLoader,
-                                    // Force high quality preferences
-                                    startLevel: -1, // Auto start, but we will override in MANIFEST_PARSED
-                                    capLevelToPlayerSize: false // Don't limit by player size
-                                });
-            
-                                this.hls.loadSource(url);
-                                this.hls.attachMedia(this.videoElement);
-                                
-                                this.hls.on(Hls.Events.MANIFEST_PARSED, (event, data) => {
-                                    // Force Highest Quality Level (Resolution)
-                                    if (this.hls.levels.length > 1) {
-                                        // levels are usually sorted by bandwidth, but let's be sure
-                                        let maxLevel = -1;
-                                        let maxBw = -1;
-                                        this.hls.levels.forEach((lvl, idx) => {
-                                            if (lvl.bitrate > maxBw) {
-                                                maxBw = lvl.bitrate;
-                                                maxLevel = idx;
-                                            }
-                                        });
-                                        if (maxLevel !== -1) {
-                                            console.log(`[Player] Forcing Max Quality: Level ${maxLevel} (${this.hls.levels[maxLevel].height}p)`);
-                                            this.hls.currentLevel = maxLevel;
-                                            this.hls.loadLevel = maxLevel; // Force load level
-                                        }
-                                    }
-                                    
-                                    // Start loading AFTER quality is locked
-                                    this.hls.startLoad();
+        class VideoPlayerService {
+            constructor() {
+                this.hls = null;
+                this.videoElement = null;
+                this.isReady = Vue.ref(false);
+                this.isLoading = Vue.ref(false);
+                this.error = Vue.ref(null);
+                this.stats = Vue.ref({ bitrate: 0, resolution: '' });
+            }
 
-                                    this.isReady.value = true;
-                                    this.isLoading.value = false;
-                                    this.videoElement.play().catch(() => {});
-                                });
-                                
-                                this.hls.on(Hls.Events.ERROR, (event, data) => {
-                                    if (data.fatal) {
-                                         this.isLoading.value = false;
-                                         this.error.value = `HLS Error: ${data.details}`;
-                                    }
-                                });
-            
-                            } else if (this.videoElement.canPlayType('application/vnd.apple.mpegurl')) {
-                                this.videoElement.src = getProxyUrlFn(url);
-                                this.videoElement.addEventListener('loadedmetadata', () => {
-                                    this.isReady.value = true;
-                                    this.isLoading.value = false;
-                                    this.videoElement.play();
-                                });
+            mount(videoEl) {
+                this.videoElement = videoEl;
+            }
+
+            unmount() {
+                this.destroy();
+                this.videoElement = null;
+            }
+
+            destroy() {
+                if (this.hls) {
+                    this.hls.destroy();
+                    this.hls = null;
+                }
+                this.isReady.value = false;
+                this.isLoading.value = false;
+            }
+
+            loadSource(url, getProxyUrlFn, onSegmentLoaded) {
+                if (!this.videoElement) return;
+                this.destroy();
+                this.isLoading.value = true;
+                this.error.value = null;
+
+                if (Hls.isSupported()) {
+                    // Custom Proxy Loader Definition
+                    class ProxyLoader extends Hls.DefaultConfig.loader {
+                        load(context, config, callbacks) {
+                            const proxyContext = { ...context };
+                            if (context.url.startsWith('http') && !context.url.includes('/proxy?url=')) {
+                                proxyContext.url = getProxyUrlFn(context.url);
                             }
+                            
+                            const originalOnSuccess = callbacks.onSuccess;
+                            callbacks.onSuccess = (response, stats, ctx) => {
+                                response.url = context.url;
+                                if (ctx) ctx.url = context.url;
+                                
+                                // Cache Interception
+                                if (onSegmentLoaded && response.data) {
+                                    // Pass context.frag to get sequence number directly
+                                    onSegmentLoaded(context.url, response.data, context.frag);
+                                }
+
+                                originalOnSuccess(response, stats, ctx);
+                            };
+                            super.load(proxyContext, config, callbacks);
                         }
                     }
 
+                    this.hls = new Hls({
+                        autoStartLoad: false, // Prevent auto loading to ensure quality lock
+                        enableWorker: true,
+                        loader: ProxyLoader,
+                        // Force high quality preferences
+                        startLevel: -1, // Auto start, but we will override in MANIFEST_PARSED
+                        capLevelToPlayerSize: false // Don't limit by player size
+                    });
+
+                    this.hls.loadSource(url);
+                    this.hls.attachMedia(this.videoElement);
+                    
+                    this.hls.on(Hls.Events.MANIFEST_PARSED, (event, data) => {
+                        // Force Highest Quality Level (Resolution)
+                        if (this.hls.levels.length > 1) {
+                            // levels are usually sorted by bandwidth, but let's be sure
+                            let maxLevel = -1;
+                            let maxBw = -1;
+                            this.hls.levels.forEach((lvl, idx) => {
+                                if (lvl.bitrate > maxBw) {
+                                    maxBw = lvl.bitrate;
+                                    maxLevel = idx;
+                                }
+                            });
+                            if (maxLevel !== -1) {
+                                console.log(`[Player] Forcing Max Quality: Level ${maxLevel} (${this.hls.levels[maxLevel].height}p)`);
+                                this.hls.currentLevel = maxLevel;
+                                this.hls.loadLevel = maxLevel; // Force load level
+                            }
+                        }
+                        
+                        // Start loading AFTER quality is locked
+                        this.hls.startLoad();
+
+                        this.isReady.value = true;
+                        this.isLoading.value = false;
+                        this.videoElement.play().catch(() => {});
+                    });
+                    
+                    this.hls.on(Hls.Events.ERROR, (event, data) => {
+                        if (data.fatal) {
+                                this.isLoading.value = false;
+                                this.error.value = `HLS Error: ${data.details}`;
+                        }
+                    });
+
+                } else if (this.videoElement.canPlayType('application/vnd.apple.mpegurl')) {
+                    this.videoElement.src = getProxyUrlFn(url);
+                    this.videoElement.addEventListener('loadedmetadata', () => {
+                        this.isReady.value = true;
+                        this.isLoading.value = false;
+                        this.videoElement.play();
+                    });
+                }
+            }
+        }
+
         window.initApp = () => {
+            // Prevent double init
+            if (window.appInitialized) return;
+            window.appInitialized = true;
+
             const { createApp, ref, computed, onMounted, onUnmounted, watch } = Vue;
 
-            createApp({
-                setup() {
-                    // --- Services ---
-                    const transcoder = new TranscoderService();
-                    const player = new VideoPlayerService();
+            try {
+                createApp({
+                    setup() {
+                        // --- Services ---
+                        const transcoder = new TranscoderService();
+                        const player = new VideoPlayerService();
 
                     // --- State ---
                     const url = ref('');
@@ -1253,48 +1235,6 @@
                         if (name.length > 255) return false;
                         return true;
                     };
-
-                    // --- Virtual Scroll Helpers ---
-
-                    const handleTimelineScroll = throttle((e) => {
-                        if (!timelineRef.value) return;
-
-                        const scrollTop = e.target.scrollTop;
-                        const scrollHeight = e.target.scrollHeight;
-                        const clientHeight = e.target.clientHeight;
-
-                        // Calculate visible range
-                        const segmentHeight = 3; // Each segment ~3px height
-                        const startIdx = Math.floor(scrollTop / segmentHeight);
-                        const endIdx = Math.min(startIdx + CONFIG.VIRTUAL_SCROLL_THRESHOLD, segments.value.length);
-
-                        visibleTimelineStart.value = startIdx;
-                        visibleTimelineEnd.value = endIdx;
-                    }, 50);
-
-                    const handleGridScroll = throttle((e) => {
-                        if (segments.value.length < CONFIG.VIRTUAL_SCROLL_THRESHOLD) return;
-
-                        const scrollTop = e.target.scrollTop;
-                        const clientWidth = e.target.clientWidth;
-                        const cellWidth = CONFIG.GRID_CELL_WIDTH;
-                        const cellHeight = CONFIG.GRID_CELL_HEIGHT;
-
-                        const cellsPerRow = Math.floor(clientWidth / cellWidth);
-                        const segmentHeight = cellHeight + 10; // +10 for spacing
-
-                        const startIdx = Math.floor(scrollTop / segmentHeight) * cellsPerRow;
-                        const maxVisibleCells = Math.ceil((clientHeight / cellHeight) * cellsPerRow);
-                        const endIdx = Math.min(startIdx + maxVisibleCells, segments.value.length);
-
-                        visibleTimelineStart.value = startIdx;
-                        visibleTimelineEnd.value = endIdx;
-                    }, 50);
-
-                    const visibleSegments = computed(() => {
-                        if (segments.value.length === 0) return [];
-                        return segments.value.slice(visibleTimelineStart.value, visibleTimelineEnd.value);
-                    });
 
                     // Queue
                     const downloadQueue = ref([]);
@@ -2072,9 +2012,6 @@
                         activeDownloads, failedSegments, completedSegments,
                         videoRef, timelineRef, isSelecting, selectionStyle, selectionMode,
                         visualizationSegments,
-                        // Virtual Scroll State
-                        visibleTimelineStart, visibleTimelineEnd,
-                        visibleSegments,
                         // Service State Mapping
                         playerStats: player.stats,
                         isPlayerReady: player.isReady,
@@ -2091,12 +2028,15 @@
                         parseM3u8, handleFile, selectVariant,
                         selectAll, clearSelection, selectSmart, toggleSegmentSelection,
                         startDownload, cancelDownload, toggleRecording, exportFile,
-                        handleTimelineScroll, handleGridScroll,
                         loadFFmpeg: () => transcoder.load(),
                         startSelection, updateSelection, endSelection, formatTime, requestPiP
                     };
                 }
             }).mount('#app');
+            } catch (e) {
+                console.error("Failed to initialize Vue app:", e);
+                document.body.innerHTML = `<div style="color:red;padding:50px;"><h1>App Error</h1><p>${e.message}</p></div>`;
+            }
         };
 
         if(window.libsLoaded) window.initApp();
