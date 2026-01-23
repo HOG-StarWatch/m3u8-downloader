@@ -597,14 +597,16 @@
                     </div>
 
                     <div class="timeline-wrapper" :class="'theme-' + timelineTheme">
-                        <div class="timeline-track" 
+                        <div class="timeline-track"
                              ref="timelineRef"
+                             @scroll="handleTimelineScroll"
                              @mousedown="startSelection"
                              @mousemove="updateSelection"
                              @mouseup="endSelection"
-                             @mouseleave="endSelection">
-                            
-                            <div v-for="(seg, idx) in visualizationSegments" :key="idx"
+                             @mouseleave="endSelection"
+                             :style="{ height: timelineScrollHeight + 'px' }">
+
+                            <div v-for="(seg, idx) in visibleSegments" :key="idx"
                                  class="seg-bar"
                                  :class="[
                                      selectedSegments.has(seg.index) ? 'selected' : 'default',
@@ -613,7 +615,7 @@
                                  :style="{ left: (seg.start / totalDuration * 100) + '%', width: (seg.duration / totalDuration * 100) + '%' }">
                             </div>
 
-                            <div v-if="isSelecting" class="selection-rect" 
+                            <div v-if="isSelecting" class="selection-rect"
                                  :style="{ left: selectionStyle.left, width: selectionStyle.width, background: selectionMode === 'remove' ? 'rgba(255, 65, 108, 0.3)' : 'rgba(176, 38, 255, 0.3)' }">
                             </div>
                         </div>
@@ -653,7 +655,7 @@
                                     @click="exportFormat = 'ts'">
                                 Raw
                             </button>
-                            <button class="btn btn-sm" 
+                            <button class="btn btn-sm"
                                     style="flex:1; background:transparent; border:none; z-index:1; transition:color 0.2s; box-shadow:none;"
                                     :style="{ color: exportFormat === 'mp4' ? 'white' : 'rgba(255,255,255,0.5)' }"
                                     @click="exportFormat = 'mp4'">
@@ -728,23 +730,42 @@
                     </div>
 
                     <!-- Grid -->
-                    <div class="grid-visualizer custom-scrollbar">
+                    <div class="grid-visualizer custom-scrollbar" @scroll="handleGridScroll"
+                         :style="{ height: gridScrollHeight + 'px' }">
                         <div v-if="segments.length === 0" style="width:100%; text-align:center; padding:40px; color:rgba(255,255,255,0.2);">
                             暂无分片数据
                         </div>
-                        <div v-for="seg in segments" :key="seg.index"
-                             class="grid-cell"
-                             :class="{
-                                 'cell-err': failedSegments.find(f => f.index === seg.index),
-                                 'cell-ok': completedSegments.has(seg.index) && selectedSegments.has(seg.index),
-                                 'cell-ok-dim': completedSegments.has(seg.index) && !selectedSegments.has(seg.index),
-                                 'cell-load': activeDownloads.find(s => s.index === seg.index),
-                                 'cell-sel': selectedSegments.has(seg.index) && !completedSegments.has(seg.index),
-                                 'cell-def': !selectedSegments.has(seg.index) && !completedSegments.has(seg.index)
-                             }"
-                             @click="toggleSegmentSelection(seg)">
-                             <div class="tooltip">#{{ seg.index }} ({{ seg.duration }}s)</div>
-                        </div>
+                        <!-- Virtual Scroll: Only render visible segments when above threshold -->
+                        <template v-if="segments.length < CONFIG.VIRTUAL_SCROLL_THRESHOLD">
+                            <div v-for="seg in segments" :key="seg.index"
+                                 class="grid-cell"
+                                 :class="{
+                                     'cell-err': failedSegments.find(f => f.index === seg.index),
+                                     'cell-ok': completedSegments.has(seg.index) && selectedSegments.has(seg.index),
+                                     'cell-ok-dim': completedSegments.has(seg.index) && !selectedSegments.has(seg.index),
+                                     'cell-load': activeDownloads.find(s => s.index === seg.index),
+                                     'cell-sel': selectedSegments.has(seg.index) && !completedSegments.has(seg.index),
+                                     'cell-def': !selectedSegments.has(seg.index) && !completedSegments.has(seg.index)
+                                 }"
+                                 @click="toggleSegmentSelection(seg)">
+                                <div class="tooltip">#{{ seg.index }} ({{ seg.duration }}s)</div>
+                            </div>
+                        </template>
+                        <template v-else>
+                            <div v-for="(seg, idx) in visibleSegments" :key="seg.index"
+                                 class="grid-cell"
+                                 :class="{
+                                     'cell-err': failedSegments.find(f => f.index === seg.index),
+                                     'cell-ok': completedSegments.has(seg.index) && selectedSegments.has(seg.index),
+                                     'cell-ok-dim': completedSegments.has(seg.index) && !selectedSegments.has(seg.index),
+                                     'cell-load': activeDownloads.find(s => s.index === seg.index),
+                                     'cell-sel': selectedSegments.has(seg.index) && !completedSegments.has(seg.index),
+                                     'cell-def': !selectedSegments.has(seg.index) && !completedSegments.has(seg.index)
+                                 }"
+                                 @click="toggleSegmentSelection(seg)">
+                                <div class="tooltip">#{{ seg.index }} ({{ seg.duration }}s)</div>
+                            </div>
+                        </template>
                     </div>
                 </div>
             </div>
@@ -795,6 +816,111 @@
 
     <!-- Application Logic -->
     <script>
+        // --- Global Configuration ---
+        const CONFIG = {
+            // Concurrency settings
+            DEFAULT_CONCURRENCY: 6,
+            MAX_CONCURRENT_TASKS: 2,
+            MAX_RETRIES: 3,
+
+            // File size limits (bytes)
+            MAX_FILE_SIZE_FOR_REMUX: 500 * 1024 * 1024,
+
+            // Timing settings
+            RECORDING_INTERVAL: 5000,
+
+            // Performance settings
+            VIRTUAL_SCROLL_THRESHOLD: 500,  // Threshold for enabling virtual scroll
+            GRID_CELL_HEIGHT: 48,          // Grid cell height for calculation
+            GRID_CELL_WIDTH: 48,           // Grid cell width for calculation
+
+            // Security
+            MAX_URL_LENGTH: 2000
+        };
+
+        // --- Shared Utility Functions ---
+
+        /**
+         * Debounce function for performance optimization
+         * @param {Function} func - Function to debounce
+         * @param {number} wait - Wait time in milliseconds
+         * @returns {Function} Debounced function
+         */
+        function debounce(func, wait) {
+            let timeout;
+            return function executedFunction(...args) {
+                const later = () => {
+                    timeout = null;
+                    func(...args);
+                };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+            };
+        }
+
+        /**
+         * Throttle function for performance optimization
+         * @param {Function} func - Function to throttle
+         * @param {number} limit - Time limit in milliseconds
+         * @returns {Function} Throttled function
+         */
+        function throttle(func, limit) {
+            let inThrottle;
+            return function executedFunction(...args) {
+                if (!inThrottle) {
+                    func(...args);
+                    inThrottle = true;
+                    setTimeout(() => inThrottle = false, limit);
+                }
+            };
+        }
+
+        /**
+         * Download and save blob as file
+         */
+        function downloadBlob(blob, filename) {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.click();
+            // Clean up the object URL after a short delay
+            setTimeout(() => URL.revokeObjectURL(url), 100);
+        }
+
+        /**
+         * AES-128 Decryption helper (DRY - Don't Repeat Yourself)
+         * @param {ArrayBuffer} data - Encrypted segment data
+         * @param {Object} key - Key object with uri and optional iv
+         * @param {Map} keyCache - Cache for fetched keys
+         * @param {number} segIndex - Segment index for IV generation
+         * @param {Function} getProxyUrl - Function to get proxy URL for key fetching
+         */
+        async function decryptSegment(data, key, keyCache, segIndex, getProxyUrl = (url) => url) {
+            let keyData = null;
+            if (keyCache.has(key.uri)) {
+                keyData = keyCache.get(key.uri);
+            } else {
+                const res = await fetch(getProxyUrl(key.uri));
+                if (!res.ok) throw new Error("Key fetch failed");
+                keyData = await res.arrayBuffer();
+                keyCache.set(key.uri, keyData);
+            }
+
+            const keyObj = await window.crypto.subtle.importKey("raw", keyData, { name: "AES-CBC" }, false, ["decrypt"]);
+            let ivBuf;
+            if (typeof key.iv === 'string') {
+                const hex = key.iv.startsWith('0x') ? key.iv.slice(2) : key.iv;
+                ivBuf = new Uint8Array(hex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+            } else {
+                const buffer = new ArrayBuffer(16);
+                const view = new DataView(buffer);
+                view.setUint32(12, segIndex);
+                ivBuf = new Uint8Array(buffer);
+            }
+            return await window.crypto.subtle.decrypt({ name: "AES-CBC", iv: ivBuf }, keyObj, data);
+        }
+
         // --- Services ---
 
         /**
@@ -1099,7 +1225,7 @@
                     // Advanced
                     const showAdvanced = ref(false);
                     const customHeaders = ref('');
-                    const concurrency = ref(6); // Default concurrency
+                    const concurrency = ref(CONFIG.DEFAULT_CONCURRENCY);
                     const variants = ref([]);
                     const audioTracks = ref([]); // New: Audio Tracks
                     const subtitles = ref([]);   // New: Subtitles
@@ -1108,7 +1234,7 @@
                     const isLive = ref(false);
                     const isRecording = ref(false);
                     const recordingInterval = ref(null);
-                    
+
                     // Timeline
                     const timelineRef = ref(null);
                     const isSelecting = ref(false);
@@ -1117,12 +1243,64 @@
                     const selectionCurrent = ref(0);
                     const totalDuration = ref(0);
 
+                    // Filename validation helper
+                    const isValidFilename = (name) => {
+                        if (!name || name.trim() === '') return false;
+                        // Basic filename validation (no invalid characters)
+                        const invalidChars = /[<>:"|?*\/\\]/;
+                        if (invalidChars.test(name)) return false;
+                        // Limit length
+                        if (name.length > 255) return false;
+                        return true;
+                    };
+
+                    // --- Virtual Scroll Helpers ---
+
+                    const handleTimelineScroll = throttle((e) => {
+                        if (!timelineRef.value) return;
+
+                        const scrollTop = e.target.scrollTop;
+                        const scrollHeight = e.target.scrollHeight;
+                        const clientHeight = e.target.clientHeight;
+
+                        // Calculate visible range
+                        const segmentHeight = 3; // Each segment ~3px height
+                        const startIdx = Math.floor(scrollTop / segmentHeight);
+                        const endIdx = Math.min(startIdx + CONFIG.VIRTUAL_SCROLL_THRESHOLD, segments.value.length);
+
+                        visibleTimelineStart.value = startIdx;
+                        visibleTimelineEnd.value = endIdx;
+                    }, 50);
+
+                    const handleGridScroll = throttle((e) => {
+                        if (segments.value.length < CONFIG.VIRTUAL_SCROLL_THRESHOLD) return;
+
+                        const scrollTop = e.target.scrollTop;
+                        const clientWidth = e.target.clientWidth;
+                        const cellWidth = CONFIG.GRID_CELL_WIDTH;
+                        const cellHeight = CONFIG.GRID_CELL_HEIGHT;
+
+                        const cellsPerRow = Math.floor(clientWidth / cellWidth);
+                        const segmentHeight = cellHeight + 10; // +10 for spacing
+
+                        const startIdx = Math.floor(scrollTop / segmentHeight) * cellsPerRow;
+                        const maxVisibleCells = Math.ceil((clientHeight / cellHeight) * cellsPerRow);
+                        const endIdx = Math.min(startIdx + maxVisibleCells, segments.value.length);
+
+                        visibleTimelineStart.value = startIdx;
+                        visibleTimelineEnd.value = endIdx;
+                    }, 50);
+
+                    const visibleSegments = computed(() => {
+                        if (segments.value.length === 0) return [];
+                        return segments.value.slice(visibleTimelineStart.value, visibleTimelineEnd.value);
+                    });
+
                     // Queue
                     const downloadQueue = ref([]);
                     const activeDownloads = ref([]);
-                    const completedSegments = ref(new Map()); 
+                    const completedSegments = ref(new Map());
                     const failedSegments = ref([]);
-                    const CONCURRENCY = 6;
 
                     // Refs
                     const videoRef = ref(null);
@@ -1137,14 +1315,15 @@
                         return d;
                     });
                     const downloadableCount = computed(() => {
-                        return segments.value.filter(s => selectedSegments.value.has(s.index) && !completedSegments.value.has(s.index)).length;
+                        // Optimized: early return and cache selected segments array
+                        if (segments.value.length === 0 || selectedSegments.value.size === 0) return 0;
+                        const selectedSegs = segments.value.filter(s => selectedSegments.value.has(s.index));
+                        return selectedSegs.filter(s => !completedSegments.value.has(s.index)).length;
                     });
                     const exportableCount = computed(() => {
-                        let count = 0;
-                        selectedSegments.value.forEach(idx => {
-                            if (completedSegments.value.has(idx)) count++;
-                        });
-                        return count;
+                        // Optimized: use Array.from instead of forEach for better performance
+                        if (selectedSegments.value.size === 0) return 0;
+                        return Array.from(selectedSegments.value).filter(idx => completedSegments.value.has(idx)).length;
                     });
                     const downloadedCount = computed(() => completedSegments.value.size);
                     const progress = computed(() => {
@@ -1165,8 +1344,25 @@
                         return { left: startX + 'px', width: width + 'px' };
                     });
 
+                    // --- Virtual Scroll Computed Properties ---
+                    const timelineScrollHeight = computed(() => {
+                        if (!timelineRef.value || segments.value.length < CONFIG.VIRTUAL_SCROLL_THRESHOLD) return 0;
+                        return Math.ceil(segments.value.length * 3); // Each segment ~3px height
+                    });
+
+                    const gridScrollHeight = computed(() => {
+                        if (segments.value.length < CONFIG.VIRTUAL_SCROLL_THRESHOLD) return 0;
+                        const cellsPerRow = Math.floor((timelineRef.value?.clientWidth || 800) / CONFIG.GRID_CELL_WIDTH);
+                        const rows = Math.ceil(segments.value.length / cellsPerRow);
+                        return rows * CONFIG.GRID_CELL_HEIGHT + 60; // +60 for headers
+                    });
+
+                    const visibleTimelineStart = ref(0);
+                    const visibleTimelineEnd = ref(CONFIG.VIRTUAL_SCROLL_THRESHOLD);
+
                     const initSegment = ref(null); // New: Init Segment for fMP4
-                    
+                    const playerInitPromise = ref(null); // Track current player init promise for cancellation
+
                     // --- Task Queue State ---
                     const tasks = ref([]);
                     
@@ -1207,36 +1403,14 @@
                              return final;
                         };
 
-                        let keyData = null;
-                        if(seg.key) {
-                            if(task.keyCache.has(seg.key.uri)) keyData = task.keyCache.get(seg.key.uri);
-                            else {
-                                const res = await fetch(getTaskProxyUrl(seg.key.uri));
-                                if(!res.ok) throw new Error("Key error");
-                                keyData = await res.arrayBuffer();
-                                task.keyCache.set(seg.key.uri, keyData);
-                            }
-                        }
-
                         const res = await fetch(getTaskProxyUrl(seg.url));
                         if(!res.ok) throw new Error("Seg error");
                         let data = await res.arrayBuffer();
 
-                        if(keyData) {
-                             const keyObj = await window.crypto.subtle.importKey("raw", keyData, {name:"AES-CBC"}, false, ["decrypt"]);
-                             let ivBuf;
-                             if (typeof seg.key.iv === 'string') {
-                                 const hex = seg.key.iv.startsWith('0x') ? seg.key.iv.slice(2) : seg.key.iv;
-                                 ivBuf = new Uint8Array(hex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
-                             } else {
-                                 const buffer = new ArrayBuffer(16);
-                                 const view = new DataView(buffer);
-                                 view.setUint32(12, seg.index); 
-                                 ivBuf = new Uint8Array(buffer);
-                             }
-                             data = await window.crypto.subtle.decrypt({name:"AES-CBC", iv: ivBuf}, keyObj, data);
+                        if(seg.key) {
+                            data = await decryptSegment(data, seg.key, task.keyCache, seg.index, getTaskProxyUrl);
                         }
-                        
+
                         task.completedSegments.set(seg.index, new Blob([data]));
                     };
 
@@ -1272,7 +1446,7 @@
                                     console.error(e);
                                     task.activeDownloads = task.activeDownloads.filter(s => s.index !== seg.index);
                                     const retries = task.retryCounts.get(seg.index) || 0;
-                                    if(retries < 3) {
+                                    if(retries < CONFIG.MAX_RETRIES) {
                                         task.retryCounts.set(seg.index, retries + 1);
                                         task.downloadQueue.push(seg);
                                     } else {
@@ -1289,9 +1463,8 @@
                     const processGlobalQueue = () => {
                         const running = tasks.value.filter(t => t.status === 'running');
                         const pending = tasks.value.filter(t => t.status === 'pending');
-                        const MAX_CONCURRENT_TASKS = 2;
-                        
-                        if (running.length < MAX_CONCURRENT_TASKS && pending.length > 0) {
+
+                        if (running.length < CONFIG.MAX_CONCURRENT_TASKS && pending.length > 0) {
                             runTask(pending[0]);
                             processGlobalQueue(); 
                         }
@@ -1333,6 +1506,13 @@
 
                     const exportTask = async (task, format) => {
                         if(isExporting.value) return;
+
+                        // Validate filename before export
+                        if (!isValidFilename(task.filename)) {
+                            alert("文件名包含非法字符或过长，请使用有效文件名");
+                            return;
+                        }
+
                         isExporting.value = true;
                         statusMessage.value = "正在导出任务: " + task.filename;
 
@@ -1343,32 +1523,23 @@
                             for(const i of sorted) {
                                 if(task.completedSegments.has(i)) blobs.push(task.completedSegments.get(i));
                             }
-                            
+
                             if(blobs.length === 0) throw new Error("无数据");
 
                             if(format === 'ts') {
                                 try {
                                     const totalSize = blobs.reduce((acc, b) => acc + b.size, 0);
-                                    if (totalSize > 500 * 1024 * 1024) throw new Error("File too large");
-                                    
+                                    if (totalSize > CONFIG.MAX_FILE_SIZE_FOR_REMUX) throw new Error("File too large");
+
                                     const tsBlob = await transcoder.transcode(blobs, task.filename, 'ts');
-                                    const u = URL.createObjectURL(tsBlob);
-                                    const a = document.createElement('a');
-                                    a.href = u; a.download = task.filename + '.ts';
-                                    a.click();
+                                    downloadBlob(tsBlob, task.filename + '.ts');
                                 } catch (e) {
                                     const b = new Blob(blobs, {type:'video/mp2t'});
-                                    const u = URL.createObjectURL(b);
-                                    const a = document.createElement('a');
-                                    a.href = u; a.download = task.filename + '.ts';
-                                    a.click();
+                                    downloadBlob(b, task.filename + '.ts');
                                 }
                             } else {
                                 const mp4Blob = await transcoder.transcode(blobs, task.filename, 'mp4');
-                                const u = URL.createObjectURL(mp4Blob);
-                                const a = document.createElement('a');
-                                a.href = u; a.download = task.filename + '.mp4';
-                                a.click();
+                                downloadBlob(mp4Blob, task.filename + '.mp4');
                             }
                             statusMessage.value = "导出完成";
                         } catch(e) {
@@ -1385,13 +1556,27 @@
                             try {
                                 JSON.parse(customHeaders.value);
                                 finalUrl += `&headers=${encodeURIComponent(customHeaders.value)}`;
-                            } catch (e) {}
+                            } catch (e) {
+                                error.value = "自定义 Headers 格式错误，应为有效的 JSON";
+                                console.warn("Invalid custom headers JSON:", e);
+                            }
                         }
                         return finalUrl;
                     };
 
                     const initPlayer = (m3u8Url) => {
+                        // Cancel any ongoing player initialization
+                        if (playerInitPromise.value) {
+                            playerInitPromise.value.cancelled = true;
+                        }
+
+                        const currentInitId = {};
+                        playerInitPromise.value = currentInitId;
+
                         player.loadSource(m3u8Url, getProxyUrl, async (segmentUrl, data, frag) => {
+                            // Check if this init was cancelled
+                            if (currentInitId.cancelled) return;
+
                             // 0. Handle Init Segment (fMP4)
                             if (frag && (frag.sn === 'initSegment' || frag.type === 'init')) {
                                 console.log('[Cache] Captured Init Segment');
@@ -1411,7 +1596,7 @@
                                     // Check URL match
                                     const urlMatch = s.url === segmentUrl || segmentUrl.endsWith(s.url) || s.url.endsWith(segmentUrl);
                                     if (!urlMatch) return false;
-                                    
+
                                     // If segment has byteRange, we MUST match it
                                     if (s.byteRange && frag.byteRange) {
                                         // frag.byteRange is [start, end]
@@ -1422,7 +1607,7 @@
                                     return true;
                                 });
                             }
-                            
+
                             // 3. Fallback to Pathname matching (only if no byteRange involved)
                             if (!seg) {
                                 try {
@@ -1443,13 +1628,13 @@
                                 let finalData = data;
                                 if(seg.key) {
                                     try {
-                                        // We need to fetch the key if we haven't cached it yet? 
+                                        // We need to fetch the key if we haven't cached it yet?
                                         // Actually, if we are here, Hls.js has already fetched the key internally.
                                         // But we don't have access to Hls.js's internal key cache easily.
                                         // So we might need to fetch it again or maintain our own key cache.
                                         // To avoid re-fetching, we should ideally hook into key loading too, but for now let's reuse fetchSegment's logic
                                         // However, calling fetch inside this sync callback might be tricky if not careful, but this is async now.
-                                        
+
                                         let keyData = null;
                                         if(keyCache.has(seg.key.uri)) keyData = keyCache.get(seg.key.uri);
                                         else {
@@ -1467,7 +1652,7 @@
                                         } else {
                                             const buffer = new ArrayBuffer(16);
                                             const view = new DataView(buffer);
-                                            view.setUint32(12, seg.index); 
+                                            view.setUint32(12, seg.index);
                                             ivBuf = new Uint8Array(buffer);
                                         }
                                         finalData = await window.crypto.subtle.decrypt({name:"AES-CBC", iv: ivBuf}, keyObj, data);
@@ -1476,7 +1661,7 @@
                                         return; // Don't cache bad data
                                     }
                                 }
-                                
+
                                 completedSegments.value.set(seg.index, new Blob([finalData]));
                             }
                         });
@@ -1697,34 +1882,12 @@
 
                     const keyCache = new Map();
                     const fetchSegment = async (seg) => {
-                        let keyData = null;
-                        if(seg.key) {
-                            if(keyCache.has(seg.key.uri)) keyData = keyCache.get(seg.key.uri);
-                            else {
-                                const res = await fetch(getProxyUrl(seg.key.uri));
-                                if(!res.ok) throw new Error("Key error");
-                                keyData = await res.arrayBuffer();
-                                keyCache.set(seg.key.uri, keyData);
-                            }
-                        }
-
                         const res = await fetch(getProxyUrl(seg.url));
                         if(!res.ok) throw new Error("Seg error");
                         let data = await res.arrayBuffer();
 
-                        if(keyData) {
-                            const keyObj = await window.crypto.subtle.importKey("raw", keyData, {name:"AES-CBC"}, false, ["decrypt"]);
-                            let ivBuf;
-                            if (typeof seg.key.iv === 'string') {
-                                const hex = seg.key.iv.startsWith('0x') ? seg.key.iv.slice(2) : seg.key.iv;
-                                ivBuf = new Uint8Array(hex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
-                            } else {
-                                const buffer = new ArrayBuffer(16);
-                                const view = new DataView(buffer);
-                                view.setUint32(12, seg.index); 
-                                ivBuf = new Uint8Array(buffer);
-                            }
-                            data = await window.crypto.subtle.decrypt({name:"AES-CBC", iv: ivBuf}, keyObj, data);
+                        if(seg.key) {
+                            data = await decryptSegment(data, seg.key, keyCache, seg.index, getProxyUrl);
                         }
 
                         completedSegments.value.set(seg.index, new Blob([data]));
@@ -1733,7 +1896,10 @@
                     const cancelDownload = () => {
                         isDownloading.value = false;
                         isRecording.value = false;
-                        if(recordingInterval.value) clearInterval(recordingInterval.value);
+                        if(recordingInterval.value) {
+                            clearInterval(recordingInterval.value);
+                            recordingInterval.value = null;
+                        }
                         downloadQueue.value = [];
                         statusMessage.value = "已停止";
                     };
@@ -1748,15 +1914,22 @@
                             recordingInterval.value = setInterval(async () => {
                                 await parseM3u8(url.value);
                                 startDownload();
-                            }, 5000);
+                            }, CONFIG.RECORDING_INTERVAL);
                             startDownload();
                         }
                     };
 
                     const exportFile = async () => {
                         if(isExporting.value) return;
+
+                        // Validate filename before export
+                        if (!isValidFilename(filename.value)) {
+                            alert("文件名包含非法字符或过长，请使用有效文件名");
+                            return;
+                        }
+
                         isExporting.value = true;
-                        
+
                         const blobs = [];
                         // Prepend Init Segment if available (Critical for fMP4)
                         if (initSegment.value) {
@@ -1768,45 +1941,33 @@
                         for(const i of sorted) {
                             if(completedSegments.value.has(i)) blobs.push(completedSegments.value.get(i));
                         }
-                        
+
                         if(blobs.length === 0) { alert("无数据或未选择已下载片段"); isExporting.value=false; return; }
 
                         if(exportFormat.value === 'ts') {
                             // Try FFmpeg Remux first for TS to fix timestamps
                             try {
                                 statusMessage.value = "正在修复 TS 时间轴 (FFmpeg)...";
-                                // Check size to avoid obvious OOM (e.g. > 500MB)
                                 const totalSize = blobs.reduce((acc, b) => acc + b.size, 0);
-                                if (totalSize > 500 * 1024 * 1024) {
+                                if (totalSize > CONFIG.MAX_FILE_SIZE_FOR_REMUX) {
                                     throw new Error("File too large for WASM remux");
                                 }
-                                
+
                                 const tsBlob = await transcoder.transcode(blobs, filename.value, 'ts');
-                                const u = URL.createObjectURL(tsBlob);
-                                const a = document.createElement('a');
-                                a.href = u; a.download = filename.value + '.ts';
-                                a.click();
+                                downloadBlob(tsBlob, filename.value + '.ts');
                             } catch (e) {
                                 console.warn("FFmpeg Remux failed, falling back to direct merge", e);
-                                // Fallback to Direct Merge
                                 statusMessage.value = "使用直接拼接导出...";
                                 const b = new Blob(blobs, {type:'video/mp2t'});
-                                const u = URL.createObjectURL(b);
-                                const a = document.createElement('a');
-                                a.href = u; a.download = filename.value + '.ts';
-                                a.click();
+                                downloadBlob(b, filename.value + '.ts');
                                 if (!e.message.includes("File too large")) {
-                                     // Only alert if it wasn't our proactive check
                                      alert("提示：尝试修复时间轴失败，已导出原始拼接文件。\n若播放异常，请尝试使用 VLC 播放器。");
                                 }
                             }
                         } else {
                             try {
                                 const mp4Blob = await transcoder.transcode(blobs, filename.value, 'mp4');
-                                const u = URL.createObjectURL(mp4Blob);
-                                const a = document.createElement('a');
-                                a.href = u; a.download = filename.value + '.mp4';
-                                a.click();
+                                downloadBlob(mp4Blob, filename.value + '.mp4');
                             } catch (e) {
                                 alert("导出失败: " + e.message);
                             }
@@ -1875,6 +2036,12 @@
                     });
 
                     onUnmounted(() => {
+                        // Clear recording interval if set
+                        if (recordingInterval.value) {
+                            clearInterval(recordingInterval.value);
+                            recordingInterval.value = null;
+                        }
+                        // Unmount player
                         player.unmount();
                     });
 
@@ -1896,17 +2063,18 @@
                     };
 
                     return {
+                        // Task Queue
                         tasks, addTaskToQueue, removeTask, exportTask,
+                        // State
                         url, filename, exportFormat, error, statusMessage, isDownloading, isExporting, downloadFinished,
                         segments, selectedSegments, selectedCount, selectedDuration, totalDuration, estimateSize, progress, downloadedCount,
                         downloadableCount, exportableCount,
                         activeDownloads, failedSegments, completedSegments,
                         videoRef, timelineRef, isSelecting, selectionStyle, selectionMode,
-                        visualizationSegments, 
-                        
-                        // Task Queue
-                        tasks, addTaskToQueue, removeTask, exportTask,
-
+                        visualizationSegments,
+                        // Virtual Scroll State
+                        visibleTimelineStart, visibleTimelineEnd,
+                        visibleSegments,
                         // Service State Mapping
                         playerStats: player.stats,
                         isPlayerReady: player.isReady,
@@ -1915,14 +2083,15 @@
                         ffmpegLoading: transcoder.isLoading,
                         ffmpegStatus: transcoder.status,
                         ffmpegLoadProgress: transcoder.loadProgress,
-                        
+                        // Settings
                         showAdvanced, customHeaders, concurrency, timelineTheme,
                         variants, audioTracks, subtitles, currentVariant,
-                        isLive, isRecording, 
-                        
+                        isLive, isRecording,
+                        // Methods
                         parseM3u8, handleFile, selectVariant,
                         selectAll, clearSelection, selectSmart, toggleSegmentSelection,
                         startDownload, cancelDownload, toggleRecording, exportFile,
+                        handleTimelineScroll, handleGridScroll,
                         loadFFmpeg: () => transcoder.load(),
                         startSelection, updateSelection, endSelection, formatTime, requestPiP
                     };
