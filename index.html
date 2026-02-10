@@ -7,6 +7,7 @@
     
     <style>
 
+
         :root {
             /* Palette */
             --bg-dark: #0f0c29;
@@ -210,6 +211,15 @@
             color: var(--primary-hover);
         }
 
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            box-shadow: 0 4px 12px rgba(217, 70, 239, 0.3);
+        }
+        .btn-primary:hover:not(:disabled) {
+            box-shadow: 0 8px 20px rgba(217, 70, 239, 0.4);
+            transform: translateY(-1px);
+        }
+
         .btn-danger { background: linear-gradient(135deg, #ef4444, #b91c1c); box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3); }
         .btn-success { background: linear-gradient(135deg, #10b981, #059669); box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3); }
         .btn-sm { padding: 6px 14px; font-size: 0.85rem; border-radius: 10px; }
@@ -380,6 +390,25 @@
             bottom: auto; top: 100%; margin-top: 5px;
             z-index: 201;
         }
+        .float-menu {
+            position: fixed;
+            right: 16px;
+            bottom: 16px;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            align-items: flex-end;
+        }
+        .float-menu-panel {
+            background: rgba(0,0,0,0.6);
+            border: 1px solid var(--glass-border);
+            backdrop-filter: blur(8px);
+            padding: 12px;
+            border-radius: 12px;
+            min-width: 200px;
+        }
+
 
     </style>
 
@@ -418,11 +447,21 @@
 
         (async () => {
             try {
+                const baseUrl = (window.__M3U8_DOWNLOADER_BASE_URL || '.').replace(/\/$/, '');
                 // Load Vue & Hls.js (Global)
                 await Promise.all([
                     loadScript(["https://cdnjs.cloudflare.com/ajax/libs/vue/3.4.15/vue.global.min.js", "https://unpkg.com/vue@3.4.15/dist/vue.global.js"]),
                     loadScript(["https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.2/hls.min.js", "https://unpkg.com/hls.js@1.5.2/dist/hls.min.js"])
                 ]);
+
+                await loadScript([`${baseUrl}/mux-mp4.js`]);
+                await loadScript([`${baseUrl}/streamsaver.js`]);
+                if (window.streamSaver) {
+                    window.streamSaver.middleTransporterUrl = `${baseUrl}/mitm.html`;
+                }
+                if (window.updateStreamSaveStatus) {
+                    window.updateStreamSaveStatus();
+                }
 
                 // Init App
                 window.libsLoaded = true;
@@ -436,6 +475,7 @@
 </head>
 <body>
     <div id="app" class="app-container">
+
         <!-- Header -->
         <header class="glass-panel header">
             <div class="brand">
@@ -447,20 +487,29 @@
             
             <div class="status-group">
                 <div class="status-badge" style="flex-direction:column; align-items:flex-start; gap:4px; min-width: 180px;">
-                    <div style="display:flex; align-items:center; gap:8px; width:100%;">
-                        <div class="dot" :class="{ active: ffmpegLoaded, loading: ffmpegLoading, error: error && !ffmpegLoaded }"></div>
-                        <span v-if="ffmpegLoading" style="flex:1;">{{ ffmpegStatus || '加载内核...' }}</span>
-                        <span v-else-if="ffmpegLoaded" style="flex:1;">FFmpeg 就绪</span>
-                        <span v-else style="flex:1; font-size:0.8em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:150px;" :title="error">{{ error ? error : '未加载' }}</span>
-                        <a v-if="!ffmpegLoaded && !ffmpegLoading" href="#" @click.prevent="loadFFmpeg" style="color:var(--primary);">重试</a>
+                    <!-- Mux.js Mode -->
+                    <div v-if="mp4Engine === 'mux'" style="display:flex; align-items:center; gap:8px; width:100%;">
+                        <div class="dot active"></div>
+                        <span style="flex:1;">Mux.js (默认)</span>
                     </div>
-                    <!-- Progress Bar -->
-                    <div v-if="ffmpegLoading" style="width:100%; height:4px; background:rgba(255,255,255,0.1); border-radius:2px; overflow:hidden; position:relative;">
-                        <div :style="{ width: ffmpegLoadProgress + '%' }" style="height:100%; background:var(--primary); transition:width 0.2s;"></div>
-                    </div>
-                    <div v-if="ffmpegLoading" style="font-size:0.75rem; color:var(--text-muted); width:100%; text-align:right;">
-                        {{ ffmpegLoadProgress }}%
-                    </div>
+
+                    <!-- FFmpeg Mode -->
+                    <template v-else>
+                        <div style="display:flex; align-items:center; gap:8px; width:100%;">
+                            <div class="dot" :class="{ active: ffmpegLoaded, loading: ffmpegLoading, error: error && !ffmpegLoaded }"></div>
+                            <span v-if="ffmpegLoading" style="flex:1;">{{ ffmpegStatus || '加载内核...' }}</span>
+                            <span v-else-if="ffmpegLoaded" style="flex:1;">FFmpeg 就绪</span>
+                            <span v-else style="flex:1; font-size:0.8em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:150px;" :title="error">{{ error ? error : '未加载' }}</span>
+                            <a v-if="!ffmpegLoaded && !ffmpegLoading" href="#" @click.prevent="loadFFmpeg" style="color:var(--primary);">重试</a>
+                        </div>
+                        <!-- Progress Bar -->
+                        <div v-if="ffmpegLoading" style="width:100%; height:4px; background:rgba(255,255,255,0.1); border-radius:2px; overflow:hidden; position:relative;">
+                            <div :style="{ width: ffmpegLoadProgress + '%' }" style="height:100%; background:var(--primary); transition:width 0.2s;"></div>
+                        </div>
+                        <div v-if="ffmpegLoading" style="font-size:0.75rem; color:var(--text-muted); width:100%; text-align:right;">
+                            {{ ffmpegLoadProgress }}%
+                        </div>
+                    </template>
                 </div>
             </div>
         </header>
@@ -494,6 +543,22 @@
                                 <textarea v-model="customHeaders" rows="3" class="glass-input" style="font-family:monospace; font-size:0.85rem;" placeholder='{"Referer": "https://site.com", "Origin": "https://site.com"}'></textarea>
                             </div>
 
+                            <!-- Injection Tool Section -->
+                            <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:8px; border:1px dashed var(--glass-border);">
+                                <div style="display:flex; justify-content:space-between; align-items:center;">
+                                    <div>
+                                        <div style="font-weight:bold; color:var(--primary); font-size:0.9rem;">💉 跨域注入工具</div>
+                                        <div style="font-size:0.75rem; color:var(--text-muted); margin-top:4px;">
+                                            在目标视频网站控制台粘贴代码，绕过 Referer/Origin 限制直接下载。
+                                        </div>
+                                    </div>
+                                    <button class="btn btn-sm btn-primary" @click="copyInjectionCode">
+                                        复制代码
+                                    </button>
+                                </div>
+                            </div>
+
+
                             <!-- New Settings -->
                             <div style="display:flex; gap:24px; flex-wrap:wrap;">
                                 <div style="flex:1; min-width:200px;">
@@ -508,6 +573,23 @@
                                         <option value="ocean">海洋 (Ocean)</option>
                                         <option value="warm">暖色 (Warm)</option>
                                     </select>
+                                </div>
+                                <div style="flex:1; min-width:200px;">
+                                    <label class="label-text">导出选项</label>
+                                    <div style="display:flex; flex-direction:column; gap:8px;">
+                                        <div style="display:flex; align-items:center; gap:10px;">
+                                            <input type="checkbox" v-model="useStreamSave" :disabled="!streamSaveReady" style="accent-color:var(--primary);">
+                                            <span style="font-size:0.85rem; color:var(--text-muted);">TS 使用流式写入</span>
+                                            <span v-if="!streamSaveReady" style="font-size:0.75rem; color:var(--danger);">未就绪</span>
+                                        </div>
+                                        <div style="display:flex; align-items:center; gap:10px;">
+                                            <span style="font-size:0.85rem; color:var(--text-muted);">MP4 引擎</span>
+                                            <select v-model="mp4Engine" class="glass-input" style="padding:6px 8px; width:auto;">
+                                                <option value="mux">mux.js (默认)</option>
+                                                <option value="ffmpeg">FFmpeg.wasm</option>
+                                            </select>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -794,10 +876,13 @@
                 </div>
             </div>
         </div>
+
+        <!-- INJECT_DOM_END -->
     </div>
 
     <!-- Application Logic -->
     <script>
+
         // --- Global Configuration ---
         const CONFIG = {
             // Concurrency settings
@@ -865,6 +950,61 @@
             setTimeout(() => URL.revokeObjectURL(url), 100);
         }
 
+        const canStreamSave = () => {
+            return window.streamSaver && typeof window.streamSaver.createWriteStream === 'function';
+        };
+
+        const streamSaveBlobs = async (blobs, filename) => {
+            const stream = window.streamSaver.createWriteStream(filename);
+            const writer = stream.getWriter();
+            for (const blob of blobs) {
+                const buffer = await blob.arrayBuffer();
+                await writer.write(new Uint8Array(buffer));
+            }
+            await writer.close();
+        };
+
+        async function transmuxToMp4(blobs, durationSeconds) {
+            if (!window.muxjs || !window.muxjs.Transmuxer) {
+                throw new Error("mux.js 未加载");
+            }
+            return new Promise(async (resolve, reject) => {
+                try {
+                    const transmuxer = new window.muxjs.Transmuxer({
+                        keepOriginalTimestamps: true,
+                        duration: parseInt(durationSeconds || 0)
+                    });
+                    const parts = [];
+                    let hasInit = false;
+                    transmuxer.on('data', segment => {
+                        if (!hasInit && segment.initSegment) {
+                            parts.push(new Uint8Array(segment.initSegment));
+                            hasInit = true;
+                        }
+                        if (segment.data) {
+                            parts.push(new Uint8Array(segment.data));
+                        }
+                    });
+                    transmuxer.on('error', e => reject(e));
+                    transmuxer.on('done', () => {
+                        if (!parts.length) {
+                            reject(new Error("mux.js 转码失败"));
+                            return;
+                        }
+                        const blob = new Blob(parts, { type: 'video/mp4' });
+                        resolve(blob);
+                    });
+                    for (const b of blobs) {
+                        const data = new Uint8Array(await b.arrayBuffer());
+                        transmuxer.push(data);
+                    }
+                    transmuxer.flush();
+                } catch (e) {
+                    reject(e);
+                }
+            });
+        }
+
         /**
          * AES-128 Decryption helper (DRY - Don't Repeat Yourself)
          * @param {ArrayBuffer} data - Encrypted segment data
@@ -918,8 +1058,17 @@
                 this.logs = Vue.ref([]);
                 
                 // Config
-                this.corePath = Vue.ref('https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js');
-                this.mainScript = 'https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js';
+                // WASM Core Fallbacks
+                this.corePaths = [
+                    'https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js',
+                    'https://cdnjs.cloudflare.com/ajax/libs/ffmpeg-core/0.11.0/ffmpeg-core.js'
+                ];
+                this.corePath = Vue.ref(this.corePaths[0]);
+                
+                // Main Script (Local preferred)
+                const baseUrl = (window.__M3U8_DOWNLOADER_BASE_URL || '.').replace(/\/$/, '');
+                this.mainScript = `${baseUrl}/ffmpeg.min.js`;
+                this.fallbackScript = 'https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js';
             }
 
             log(msg) {
@@ -949,7 +1098,12 @@
                 try {
                     // 1. Load FFmpeg v0.11.x Main Script
                     this.status.value = '加载 JS 库...';
-                    await this.loadScript(this.mainScript);
+                    try {
+                        await this.loadScript(this.mainScript);
+                    } catch (e) {
+                        this.log("Local FFmpeg JS failed, trying CDN...");
+                        await this.loadScript(this.fallbackScript);
+                    }
                     
                     if (typeof FFmpeg === 'undefined') {
                         throw new Error("FFmpeg script loaded but global object not found");
@@ -960,36 +1114,53 @@
                     
                     this.loadProgress.value = 20;
 
-                    // 2. Initialize Engine
-                    this.status.value = '启动单线程引擎...';
-                    this.log(`Core Path: ${this.corePath.value}`);
+                    // 2. Initialize Engine with Fallback
+                    const loadEngine = async (coreUrl) => {
+                        this.status.value = `启动引擎 (${new URL(coreUrl).hostname})...`;
+                        this.log(`Core Path: ${coreUrl}`);
 
-                    const instance = createFFmpeg({ 
-                        log: true,
-                        corePath: this.corePath.value,
-                        progress: ({ ratio }) => {
-                            // Loading progress is not granular in 0.11, but we get run progress
-                        }
-                    });
+                        const instance = createFFmpeg({ 
+                            log: true,
+                            corePath: coreUrl,
+                            progress: ({ ratio }) => {}
+                        });
 
-                    instance.setLogger(({ type, message }) => {
-                        this.log(`[FFmpeg] ${message}`);
-                    });
+                        instance.setLogger(({ type, message }) => {
+                            this.log(`[FFmpeg] ${message}`);
+                        });
 
-                    // 3. Load Core (This downloads the big .wasm file)
-                    this.status.value = '下载并编译 WASM (约30MB)...';
-                    // Mock progress since v0.11 load() doesn't report download progress well
-                    let mockProgress = 20;
-                    const timer = setInterval(() => {
-                        mockProgress += 5;
-                        if(mockProgress > 90) mockProgress = 90;
-                        this.loadProgress.value = mockProgress;
-                    }, 500);
+                        await instance.load();
+                        return instance;
+                    };
 
-                    await instance.load();
+                    // Try loading with fallbacks
+                    let instance = null;
+                    let lastError = null;
                     
-                    clearInterval(timer);
-                    this.loadProgress.value = 100;
+                    for (const url of this.corePaths) {
+                        try {
+                            this.status.value = '下载并编译 WASM...';
+                            // Mock progress
+                            let mockProgress = 20;
+                            const timer = setInterval(() => {
+                                mockProgress += 5;
+                                if(mockProgress > 90) mockProgress = 90;
+                                this.loadProgress.value = mockProgress;
+                            }, 500);
+
+                            instance = await loadEngine(url);
+                            
+                            clearInterval(timer);
+                            this.loadProgress.value = 100;
+                            break; // Success
+                        } catch (e) {
+                            console.warn(`Failed to load WASM from ${url}:`, e);
+                            lastError = e;
+                            this.loadProgress.value = 20; // Reset progress
+                        }
+                    }
+
+                    if (!instance) throw lastError || new Error("All WASM sources failed");
                     
                     this.ffmpeg = instance;
                     this.isLoaded.value = true;
@@ -998,7 +1169,7 @@
 
                 } catch (e) {
                     console.error("Transcoder Load Error:", e);
-                    this.error.value = e.message + " (请检查网络是否能访问 unpkg.com)";
+                    this.error.value = e.message + " (请检查网络)";
                     this.status.value = '失败';
                     this.isLoading.value = false;
                 } finally {
@@ -1178,6 +1349,7 @@
             }
         }
 
+        
         window.initApp = () => {
             // Prevent double init
             if (window.appInitialized) return;
@@ -1212,10 +1384,13 @@
                     const audioTracks = ref([]); // New: Audio Tracks
                     const subtitles = ref([]);   // New: Subtitles
                     const currentVariant = ref(null);
-                    const timelineTheme = ref('default'); // default, high-contrast, ocean
+                    const timelineTheme = ref('default');
                     const isLive = ref(false);
                     const isRecording = ref(false);
                     const recordingInterval = ref(null);
+                    const useStreamSave = ref(true);
+                    const streamSaveReady = ref(canStreamSave());
+                    const mp4Engine = ref('mux');
 
                     // Timeline
                     const timelineRef = ref(null);
@@ -1271,6 +1446,10 @@
                         return Math.floor((downloadedCount.value / selectedCount.value) * 100);
                     });
                     const estimateSize = computed(() => (selectedCount.value * 1.5).toFixed(1));
+
+                    const updateStreamSaveStatus = () => {
+                        streamSaveReady.value = canStreamSave();
+                    };
 
                     const visualizationSegments = computed(() => {
                         if (segments.value.length === 0) return [];
@@ -1474,12 +1653,36 @@
                                     const tsBlob = await transcoder.transcode(blobs, task.filename, 'ts');
                                     downloadBlob(tsBlob, task.filename + '.ts');
                                 } catch (e) {
-                                    const b = new Blob(blobs, {type:'video/mp2t'});
-                                    downloadBlob(b, task.filename + '.ts');
+                                    let streamed = false;
+                                    if (useStreamSave.value && canStreamSave()) {
+                                        statusMessage.value = "使用流式写入导出...";
+                                        try {
+                                            await streamSaveBlobs(blobs, task.filename + '.ts');
+                                            streamed = true;
+                                        } catch (err) {
+                                            console.warn("Stream save failed", err);
+                                        }
+                                    }
+                                    if (!streamed) {
+                                        const b = new Blob(blobs, {type:'video/mp2t'});
+                                        downloadBlob(b, task.filename + '.ts');
+                                    }
                                 }
                             } else {
-                                const mp4Blob = await transcoder.transcode(blobs, task.filename, 'mp4');
-                                downloadBlob(mp4Blob, task.filename + '.mp4');
+                                const useMux = mp4Engine.value === 'mux' && window.muxjs;
+                                if (useMux) {
+                                    statusMessage.value = "使用 mux.js 混流 MP4...";
+                                    const durationSeconds = task.segments
+                                        .filter(s => task.selectedSegments.has(s.index))
+                                        .reduce((acc, s) => acc + s.duration, 0);
+                                    const mp4Blob = await transmuxToMp4(blobs, durationSeconds);
+                                    downloadBlob(mp4Blob, task.filename + '.mp4');
+                                } else {
+                                    statusMessage.value = "使用 FFmpeg.wasm 转码 MP4...";
+                                    if (!transcoder.isLoaded.value) await transcoder.load();
+                                    const mp4Blob = await transcoder.transcode(blobs, task.filename, 'mp4');
+                                    downloadBlob(mp4Blob, task.filename + '.mp4');
+                                }
                             }
                             statusMessage.value = "导出完成";
                         } catch(e) {
@@ -1897,17 +2100,38 @@
                                 downloadBlob(tsBlob, filename.value + '.ts');
                             } catch (e) {
                                 console.warn("FFmpeg Remux failed, falling back to direct merge", e);
-                                statusMessage.value = "使用直接拼接导出...";
-                                const b = new Blob(blobs, {type:'video/mp2t'});
-                                downloadBlob(b, filename.value + '.ts');
-                                if (!e.message.includes("File too large")) {
-                                     alert("提示：尝试修复时间轴失败，已导出原始拼接文件。\n若播放异常，请尝试使用 VLC 播放器。");
+                                let streamed = false;
+                                if (useStreamSave.value && canStreamSave()) {
+                                    statusMessage.value = "使用流式写入导出...";
+                                    try {
+                                        await streamSaveBlobs(blobs, filename.value + '.ts');
+                                        streamed = true;
+                                    } catch (err) {
+                                        console.warn("Stream save failed", err);
+                                    }
+                                }
+                                if (!streamed) {
+                                    statusMessage.value = "使用直接拼接导出...";
+                                    const b = new Blob(blobs, {type:'video/mp2t'});
+                                    downloadBlob(b, filename.value + '.ts');
+                                    if (!e.message.includes("File too large")) {
+                                         alert("提示：尝试修复时间轴失败，已导出原始拼接文件。\n若播放异常，请尝试使用 VLC 播放器。");
+                                    }
                                 }
                             }
                         } else {
                             try {
-                                const mp4Blob = await transcoder.transcode(blobs, filename.value, 'mp4');
-                                downloadBlob(mp4Blob, filename.value + '.mp4');
+                                const useMux = mp4Engine.value === 'mux' && window.muxjs;
+                                if (useMux) {
+                                    statusMessage.value = "使用 mux.js 混流 MP4...";
+                                    const mp4Blob = await transmuxToMp4(blobs, totalDuration.value);
+                                    downloadBlob(mp4Blob, filename.value + '.mp4');
+                                } else {
+                                    statusMessage.value = "使用 FFmpeg.wasm 转码 MP4...";
+                                    if (!transcoder.isLoaded.value) await transcoder.load();
+                                    const mp4Blob = await transcoder.transcode(blobs, filename.value, 'mp4');
+                                    downloadBlob(mp4Blob, filename.value + '.mp4');
+                                }
                             } catch (e) {
                                 alert("导出失败: " + e.message);
                             }
@@ -1972,7 +2196,7 @@
 
                     onMounted(() => {
                         player.mount(videoRef.value);
-                        transcoder.load();
+                        // FFmpeg.wasm 不默认加载，按需点击顶部状态中的重试按钮加载
                     });
 
                     onUnmounted(() => {
@@ -1984,6 +2208,39 @@
                         // Unmount player
                         player.unmount();
                     });
+
+                    const copyToClipboard = (content) => {
+                        const el = document.createElement('textarea');
+                        el.value = content;
+                        el.style.opacity = '0';
+                        document.body.appendChild(el);
+                        el.select();
+                        const ok = document.execCommand('copy');
+                        document.body.removeChild(el);
+                        return ok;
+                    };
+
+
+
+                    const copyInjectionCode = async () => {
+                        try {
+                            statusMessage.value = "正在获取注入代码...";
+                            const res = await fetch('js/inject.js');
+                            if (!res.ok) throw new Error(`HTTP ${res.status} - 无法加载 js/inject.js`);
+                            const code = await res.text();
+                            
+                            if (copyToClipboard(code)) {
+                                alert("注入代码已复制！\n请在目标网页控制台(F12 -> Console)粘贴运行。");
+                                statusMessage.value = "代码已复制";
+                            } else {
+                                throw new Error("复制失败");
+                            }
+                        } catch (e) {
+                            console.error(e);
+                            alert("获取代码失败: " + e.message + "\n提示：请确保通过 HTTP 服务器(如 Live Server)运行此页面。");
+                            statusMessage.value = "获取代码失败";
+                        }
+                    };
 
                     // Expose methods for self-test
                     window.testModules = async () => {
@@ -2002,6 +2259,7 @@
                         }
                     };
 
+                    window.updateStreamSaveStatus = updateStreamSaveStatus;
                     return {
                         // Task Queue
                         tasks, addTaskToQueue, removeTask, exportTask,
@@ -2022,6 +2280,7 @@
                         ffmpegLoadProgress: transcoder.loadProgress,
                         // Settings
                         showAdvanced, customHeaders, concurrency, timelineTheme,
+                        useStreamSave, streamSaveReady, mp4Engine,
                         variants, audioTracks, subtitles, currentVariant,
                         isLive, isRecording,
                         // Methods
@@ -2029,7 +2288,8 @@
                         selectAll, clearSelection, selectSmart, toggleSegmentSelection,
                         startDownload, cancelDownload, toggleRecording, exportFile,
                         loadFFmpeg: () => transcoder.load(),
-                        startSelection, updateSelection, endSelection, formatTime, requestPiP
+                        startSelection, updateSelection, endSelection, formatTime, requestPiP,
+                        copyInjectionCode
                     };
                 }
             }).mount('#app');
@@ -2040,6 +2300,7 @@
         };
 
         if(window.libsLoaded) window.initApp();
+
     </script>
 </body>
 </html>

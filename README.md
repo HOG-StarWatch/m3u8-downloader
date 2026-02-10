@@ -5,88 +5,94 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Vue 3](https://img.shields.io/badge/vue-3.x-green.svg)](https://vuejs.org/)
 [![FFmpeg.wasm](https://img.shields.io/badge/ffmpeg.wasm-0.11-orange.svg)](https://ffmpeg.org/)
+[![Cloudflare Pages](https://img.shields.io/badge/deploy-Cloudflare%20Pages-F38020.svg)](https://pages.cloudflare.com/)
+[![Cloudflare Workers](https://img.shields.io/badge/edge-Cloudflare%20Workers-F38020.svg)](https://workers.cloudflare.com/)
 
 ## 目录
 
 - [功能特性](#-功能特性)
-- [技术架构](#-技术架构)
+- [系统架构](#-系统架构)
 - [快速开始](#-快速开始)
 - [使用说明](#-使用说明)
 - [配置说明](#-配置说明)
+- [跨域注入工具](#-跨域注入工具)
 - [部署指南](#-部署指南)
-- [性能优化](#-性能优化)
 - [常见问题](#-常见问题)
-- [安全说明](#-安全说明)
-- [开发指南](#-开发指南)
 
 ## 功能特性
 
-### 核心功能
+### 核心优势
 
 | 功能 | 描述 |
 |------|------|
-| **可视化时间轴** | 直观展示视频切片，支持拖拽框选、智能选择 |
-| **双引擎转码策略** | Mix Mode (MP4) 使用 FFmpeg.wasm 无损混流；Raw Mode (TS) 快速合并 |
-| **fMP4 完整支持** | 自动捕获 HLS 中的 init 分段，解决格式兼容性问题 |
-| **AES-128 解密** | 支持标准 HLS AES-128 加密流自动解密 |
-| **高并发下载** | 动态并发控制（默认 6 线程），支持断点重试 |
-| **后台任务队列** | 多任务自动调度，实现"边看边下"工作流 |
+| **可视化时间轴** | 直观展示视频切片，支持拖拽框选、智能选择（前 30 秒/后 30 秒） |
+| **双引擎转码** | **Mix Mode (MP4)**: 使用 FFmpeg.wasm 无损混流<br>**Raw Mode (TS)**: 快速合并，无需转码 |
+| **高性能下载** | 动态并发控制（默认 6 线程），支持断点重试与后台任务队列 |
+| **原生解密** | 利用 Web Crypto API 进行 AES-128 硬件加速解密，性能远超 JS 实现 |
+| **大文件支持** | 集成 StreamSaver.js + ServiceWorker，直接写入硬盘，支持 GB 级文件下载 |
+| **注入模式** | 独创 Shadow DOM 注入技术，无侵入式集成到任意视频网站 |
 
 ### UI/UX 特性
 
-- Glassmorphism（毛玻璃）设计风格
-- 多主题切换（默认、高对比度、海洋）
-- 实时播放预览
-- 网格可视化切片状态
-- **CSS 渲染优化** - 使用 `content-visibility` 自动优化长列表性能
-- 响应式布局设计
+- **Glassmorphism**: 现代化毛玻璃设计风格
+- **渲染优化**: 使用 CSS `content-visibility` 技术，轻松渲染数千个分段而不卡顿
+- **多主题**: 内置默认、高对比度、海洋、暖色等多种配色方案
+- **实时反馈**: 下载进度、转码状态、错误日志实时可视化
 
-## 技术架构
+## 系统架构
 
+### 数据流向图
+
+```mermaid
+graph TD
+    User[用户输入 URL] --> Parser[M3U8 解析器]
+    Parser --> Playlist{加密?}
+    Playlist -- Yes --> KeyLoader[获取解密 Key]
+    Playlist -- No --> Downloader
+    KeyLoader --> Downloader[多线程下载器]
+    Downloader --> Decrypter[Web Crypto 解密]
+    Decrypter --> Buffer[内存缓冲]
+    
+    Buffer --> Mode{导出模式}
+    Mode -- Raw(TS) --> Merger[二进制合并]
+    Mode -- Mix(MP4) --> FFmpeg[FFmpeg.wasm 转码]
+    
+    Mermaid --> StreamSaver[StreamSaver (ServiceWorker)]
+    StreamSaver --> Disk[本地硬盘]
 ```
-M3U8Downloader
-├── index.html          # 单页面应用（2080 行）
-├── _worker.js         # Cloudflare Worker 代理（168 行）
-└── README.md          # 项目文档
+
+### 项目结构
+
+本项目采用**完全本地化**的依赖管理，确保离线可用性和稳定性。
+
+```text
+m3u8-downloader.git/
+├── index.html          # 单页面应用入口 (Vue 3 + Logic)
+├── _worker.js         # Cloudflare Worker 代理核心
+├── mitm.html          # StreamSaver 中间人页面 (大文件支持)
+├── serviceWorker.js   # StreamSaver 服务工作线程
+├── streamsaver.js     # 流式存储库
+├── js/
+│   └── inject.js      # 跨域注入脚本 (Shadow DOM 实现)
+├── ffmpeg.min.js      # FFmpeg 核心库
+├── hls.min.js         # Hls.js 播放器核心
+├── mux-mp4.js         # MP4 封装库
+└── vue.global.js      # Vue 3 框架
 ```
-
-### 前端技术栈
-
-| 组件 | 技术 | 版本 | 用途 |
-|------|------|------|
-| 框架 | Vue 3 | 响应式 UI |
-| 播放器 | Hls.js | M3U8 流解析与播放 |
-| 转码器 | FFmpeg.wasm 0.11.x | 视频格式转换（单线程） |
-| 加密 | Web Crypto API | AES-128 解密 |
-| 样式 | CSS Variables + Glassmorphism | 现代化 UI |
-
-### 后端技术栈
-
-| 组件 | 技术 | 用途 |
-|------|------|------|
-| 运行平台 | Cloudflare Workers / Pages | 静态托管 + CORS 代理 |
-| 代理脚本 | _worker.js | 解决跨域请求限制 |
-
-### 安全特性
-
-| 特性 | 实现 |
-|------|------|
-| SSRF 防护 | URL 白名单验证 + 协议限制 |
-| CORS 安全 | 源验证 + 限制方法和头 |
-| 请求超时 | 30 秒超时机制 |
-| 文件大小限制 | 500MB 最大代理限制 |
-| 文件名验证 | 禁止非法字符，长度限制 255 |
-| 内存管理 | Blob URL 自动清理 |
 
 ## 快速开始
 
 ### 方式一：Cloudflare Pages（推荐）
 
-1. 复制项目到本地
-2. 登录 [Cloudflare Dashboard](https://dash.cloudflare.com/)
-3. 进入 **Workers & Pages** -> **Create Application** -> **Pages** -> **Upload assets**
-4. 上传项目文件夹（包含 `index.html` 和 `_worker.js`）
-5. 部署完成后访问分配的 URL
+本项目专为 Cloudflare Pages 设计，支持**零配置**部署。
+
+1. **准备代码**: 克隆本项目或下载完整代码包。
+2. **部署**:
+   - 登录 Cloudflare Dashboard -> **Workers & Pages** -> **Create Application** -> **Pages** -> **Upload assets**。
+   - 上传整个项目文件夹（包含所有 .js 和 .html 文件）。
+3. **完成**: 访问分配的 `*.pages.dev` 域名即可使用。
+
+* Fork本仓库后可以直接在 Cloudflare Pages 绑定仓库部署，无需任何配置。
 
 ### 方式二：本地开发
 
@@ -94,161 +100,81 @@ M3U8Downloader
 # 安装 Wrangler CLI
 npm install -g wrangler
 
-# 启动本地开发服务器（包含 Worker 代理支持）
+# 启动本地开发服务器（自动加载 _worker.js 代理）
 npx wrangler pages dev .
 ```
 
 访问 `http://localhost:8788` 即可使用。
 
-### 方式三：静态托管
+### 方式三：静态服务器
 
-直接将 `index.html` 和 `_worker.js` 部署到任何静态服务器。
-
-**注意：** 如果不使用 `_worker.js` 代理，需要自行配置反向代理解决跨域问题。
+如果您的视频源支持 CORS，您可以直接将所有文件部署到 Nginx/Apache 等静态服务器。
+*注意：如果视频源有 CORS 限制且未配置 Worker 代理，建议使用[跨域注入工具](#-跨域注入工具)。*
 
 ## 使用说明
 
-### 1. 输入源
+### 1. 基础流程
+1. **输入链接**: 粘贴 `.m3u8` 地址或上传本地文件。
+2. **解析**: 点击解析，系统自动加载视频预览。
+3. **选择**: 默认全选，可在时间轴上拖拽框选特定片段。
+4. **下载**: 点击“开始下载”，完成后自动触发浏览器下载。
 
-- 在输入框粘贴 `.m3u8` 链接
-- 或点击文件夹图标上传本地 `.m3u8` / `.txt` 文件
+### 2. 高级导出
+- **MP4 (Mix)**: 兼容性最好，适合大多数播放器。使用 FFmpeg.wasm 封装。
+- **TS (Raw)**: 速度最快，无损合并。适合后续专业编辑。
 
-### 2. 解析与预览
+### 3. 后台队列
+点击“加入队列”可将当前任务移至后台，您可以继续解析新的视频。支持同时运行多个下载任务。
 
-- 点击"解析链接"按钮
-- 系统会自动分析 Master Playlist
-- 支持选择不同分辨率或音轨
-- 视频播放器会自动预加载
+## 跨域注入工具
 
-### 3. 选择切片
+针对开启了严格防盗链（Referer Check）或 CORS 限制的网站，本项目提供了专家级注入工具。
 
-**手动框选**
-- 在时间轴上按住鼠标左键拖拽
+### 原理
+通过在目标网站的 Context 下运行代码，直接复用当前页面的 Cookie 和 Referer，彻底绕过鉴权限制。
 
-**智能选择**
-- 点击快捷按钮：前五分钟、前 30 秒、后 30 秒
-
-**点选**
-- 在网格视图中点击单个切片
-
-### 4. 下载
-
-**直接下载**
-- 点击"开始下载"，系统启动多线程下载
-- 绿色表示已下载完成
-
-**后台队列**
-- 点击"加入队列"，任务移至后台运行
-- 可继续解析其他链接，互不干扰
-- 在"后台任务队列"面板查看进度
-
-### 5. 导出
-
-**当前任务**
-- 下载完成后点击"保存文件"
-
-**队列任务**
-- 在任务队列面板点击 **MP4** 或 **TS** 按钮
-
-**导出格式对比**
-
-| 格式 | 说明 | 适用场景 |
-|------|------|---------|
-| Raw (TS) | 原始传输流合并，适合存档 |
-| Mix (MP4) | 通用媒体文件，适合播放 |
+### 使用步骤
+1. 在下载器界面下方找到 **“跨域注入工具”** 面板。
+2. 点击 **“复制代码”**。
+3. 打开目标视频播放页面，按 `F12` 打开开发者工具 -> **Console (控制台)**。
+4. 粘贴代码并回车。
+5. 页面右下角将出现悬浮窗（Shadow DOM 隔离，不影响原网页样式），直接在此操作下载。
 
 ## 配置说明
 
-### 前端配置
+### 前端配置 (`index.html`)
 
 ```javascript
 const CONFIG = {
-    // 并发设置
-    DEFAULT_CONCURRENCY: 6,        // 默认下载数量
-    MAX_CONCURRENT_TASKS: 2,      // 最大后台任务数
-    MAX_RETRIES: 3,               // 最大重试次数
-
-    // 文件大小限制
-    MAX_FILE_SIZE_FOR_REMUX: 500 * 1024 * 1024,  // 500MB
-
-    // 时间设置
-    RECORDING_INTERVAL: 5000,     // 直播录制间隔（毫秒）
-
-    // 安全
-    MAX_URL_LENGTH: 2000          // 最大 URL 长度
+    DEFAULT_CONCURRENCY: 6,       // 默认并发数
+    MAX_FILE_SIZE_FOR_REMUX: 500 * 1024 * 1024, // 浏览器内存转码限制
+    RECORDING_INTERVAL: 5000      // 直播录制切片间隔
 };
 ```
 
-### Worker 配置
+### 代理配置 (`_worker.js`)
 
 ```javascript
 const CONFIG = {
-    // 允许的代理域名（空 = 允许所有）
-    ALLOWED_DOMAINS: [],
-
-    // 最大代理文件大小（字节，0 = 无限制）
-    MAX_FILE_SIZE: 500 * 1024 * 1024,
-
-    // 请求超时（毫秒）
-    REQUEST_TIMEOUT: 30000,
-
-    // 信任的源（空 = 允许所有）
-    TRUSTED_ORIGINS: []
+    ALLOWED_DOMAINS: [],          // 允许代理的域名白名单 (空=全部允许)
+    MAX_FILE_SIZE: 500 * 1024 * 1024, // 代理文件大小限制
+    REQUEST_TIMEOUT: 30000        // 请求超时时间
 };
 ```
 
-## 部署指南
+## 常见问题
 
-### Cloudflare Pages 部署
+### Q: 为什么下载大文件时提示内存不足？
 
-1. **准备部署文件**
-   - `index.html` - 主应用
-   - `_worker.js` - Worker 代理（必需）
+**A:** 请确保 `mitm.html` 和 `serviceWorker.js` 已正确部署并在同一目录下。工具会自动降级使用 StreamSaver 直接写入硬盘，避免占用内存。
 
-2. **通过 Dashboard 部署**
-   - 登录 Cloudflare Dashboard
-   - 进入 Workers & Pages
-   - Create Application -> Pages -> Upload assets
-   - 选择项目文件夹上传
+### Q: FFmpeg 加载失败？
 
-3. **环境变量配置**（可选）
-   - 可通过 `wrangler.toml` 配置 Worker 环境变量
-
-### 其他平台部署
-
-项目结构简单，可部署到任何静态托管服务：
-
-| 平台 | 代理配置要求 |
-|------|-------------|
-| Vercel | 需要配置 Edge Functions 代理 |
-| Netlify | 需要配置 Functions 代理 |
-| GitHub Pages | 需要使用反向代理或禁用 CORS |
-| Nginx / Apache | 配置反向代理规则 |
-
-## 性能优化
-
-### 已实现的优化
-
-| 优化项 | 描述 | 影响 |
-|---------|------|------|
-| **CSS 渲染优化** | 使用 `content-visibility: auto` 替代复杂的虚拟滚动 JS 逻辑 | 浏览器原生优化，流畅渲染大量分段且代码更轻量 |
-| **防抖节流** | 用户输入（选择、滚动）使用防抖和节流，减少计算频率 | 降低高频事件的 CPU 占用 |
-| **Blob URL 清理** | 自动释放 Object URL 避免内存泄漏 | 长期运行不崩溃 |
-| **AES 解密去重** | decryptSegment 共享函数，消除重复代码 | 减少代码冗余 |
-| **计算属性优化** | downloadableCount/exportableCount 添加早期返回和缓存 | 提升响应速度 |
-| **竞态条件修复** | 增加初始化锁和超时检测，修复 `v-cloak` 导致的白屏问题 | 提升应用启动稳定性 |
-| **文件名验证** | 导出前验证文件名，防止非法操作 | 增强安全性 |
-
-### 性能对比
-
-| 场景 | 优化前 | 优化后 |
-|--------|---------|--------|
-| 1000 个分段渲染 | ~500ms (JS 计算) | ~20ms (原生 CSS 优化) |
-| 用户频繁选择 | 每次都触发计算 | 防抖后仅触发一次 |
-| 启动加载 | 可能因 Vue 挂载慢导致白屏 | 5s 超时自动恢复显示 |
-
-##### 常见问题
-
+**A:** FFmpeg.wasm 需要 `SharedArrayBuffer` 支持。Cloudflare Pages 默认环境通常支持，如在其他环境部署，请确保响应头包含：
+```
+Cross-Origin-Embedder-Policy: require-corp
+Cross-Origin-Opener-Policy: same-origin
+```
 ### Q: 页面一片空白？
 
 **A:** 
@@ -302,97 +228,6 @@ const CONFIG = {
 - Safari: 支持（部分旧版本可能受限）
 - IE: 不支持
 
-## 安全说明
-
-### 安全特性
-
-| 特性 | 描述 |
-|------|------|
-| SSRF 防护 | URL 解码 + 白名单验证 |
-| CORS 控制 | 源验证 + 限制方法和头 |
-| 文件名验证 | 禁止路径遍历和非法字符 |
-| Blob 清理 | 自动释放 Object URL 避免内存泄漏 |
-| 请求限制 | 30 秒超时 + 文件大小限制 |
-
-### 生产环境建议
-
-1. **配置域名白名单**
-   ```javascript
-   ALLOWED_DOMAINS: ['example.com', 'trusted-site.org']
-   ```
-
-2. **配置可信源**
-   ```javascript
-   TRUSTED_ORIGINS: ['https://your-domain.com']
-   ```
-
-3. **添加速率限制**（扩展 Worker）
-4. **添加日志审计**
-
-## 开发指南
-
-### 本地开发
-
-```bash
-# 克隆项目
-git clone https://github.com/your-username/m3u8-downloader.git
-cd m3u8-downloader
-
-# 启动开发服务器
-npx wrangler pages dev .
-```
-
-访问 `http://localhost:8788`
-
-### 代码结构
-
-```
-index.html
-├── CSS 样式（约 400 行）
-├── HTML 结构（约 500 行）
-└── JavaScript 逻辑（约 1180 行）
-    ├── CONFIG 配置
-    ├── 工具函数（downloadBlob, decryptSegment, isValidFilename, debounce, throttle）
-    ├── TranscoderService（FFmpeg 封装）
-    ├── VideoPlayerService（Hls.js 封装）
-    ├── Task 队列管理
-    └── 主应用逻辑
-```
-
-### 性能优化建议
-
-1. **Web Worker 离线** - 主线程不阻塞
-2. **IndexedDB 持久化** - 支持断点续传
-3. **代码拆分** - 模块化提升可维护性
-4. **类型安全** - 迁移到 TypeScript
-
-### 已实现的优化
-
-- Blob URL 自动清理防止内存泄漏
-- AES 解密逻辑去重（decryptSegment 共享函数）
-- 计算属性优化（downloadableCount, exportableCount）
-- 竞态条件修复（playerInitPromise 取消机制，initApp 锁）
-- 文件名验证（非法字符检测）
-- CSS 渲染优化（`content-visibility`）
-- 防抖节流（用户输入优化）
-
-## 项目结构
-
-```
-workspace/
-├── index.html          # 单页面应用
-├── _worker.js         # Cloudflare Worker 代理
-└── README.md          # 项目文档
-```
-
-## 许可证
-
-MIT License - 详见 [LICENSE](LICENSE) 文件
-
-## 贡献
-
-欢迎提交 Issue 和 Pull Request！
-
 ---
 
-**Made with ❤️ using Vue 3, Hls.js & FFmpeg.wasm**
+**Made with ❤️ By StarWatch**
