@@ -57,9 +57,11 @@ graph TD
     Mode -- Raw(TS) --> Merger[二进制合并]
     Mode -- Mix(MP4) --> FFmpeg[FFmpeg.wasm 转码]
     
-    Mermaid --> StreamSaver[StreamSaver (ServiceWorker)]
-    FFmpeg --> StreamSaver[StreamSaver (ServiceWorker)]
-    StreamSaver --> Disk[本地硬盘]
+    Merger --> StreamSaverRaw[StreamSaver 写入]
+    FFmpeg --> StreamSaverMP4[StreamSaver 写入]
+    StreamSaverRaw --> Disk[本地硬盘]
+    StreamSaverMP4 --> Disk
+
 ```
 
 ### 项目结构
