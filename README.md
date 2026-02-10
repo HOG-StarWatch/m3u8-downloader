@@ -10,14 +10,14 @@
 
 ## 目录
 
-- [功能特性](#-功能特性)
-- [系统架构](#-系统架构)
-- [快速开始](#-快速开始)
-- [使用说明](#-使用说明)
-- [配置说明](#-配置说明)
-- [跨域注入工具](#-跨域注入工具)
-- [部署指南](#-部署指南)
-- [常见问题](#-常见问题)
+- [功能特性](#功能特性)
+- [系统架构](#系统架构)
+- [快速开始](#快速开始)
+- [使用说明](#使用说明)
+- [配置说明](#配置说明)
+- [跨域注入工具](#跨域注入工具)
+- [部署指南](#部署指南)
+- [常见问题](#常见问题)
 
 ## 功能特性
 
@@ -58,6 +58,7 @@ graph TD
     Mode -- Mix(MP4) --> FFmpeg[FFmpeg.wasm 转码]
     
     Mermaid --> StreamSaver[StreamSaver (ServiceWorker)]
+    FFmpeg --> StreamSaver[StreamSaver (ServiceWorker)]
     StreamSaver --> Disk[本地硬盘]
 ```
 
@@ -77,7 +78,7 @@ m3u8-downloader.git/
 ├── ffmpeg.min.js      # FFmpeg 核心库
 ├── hls.min.js         # Hls.js 播放器核心
 ├── mux-mp4.js         # MP4 封装库
-└── vue.global.js      # Vue 3 框架
+└── vue.global.prod.js # Vue 3 框架 (生产环境版)
 ```
 
 ## 快速开始
@@ -109,7 +110,7 @@ npx wrangler pages dev .
 ### 方式三：静态服务器
 
 如果您的视频源支持 CORS，您可以直接将所有文件部署到 Nginx/Apache 等静态服务器。
-*注意：如果视频源有 CORS 限制且未配置 Worker 代理，建议使用[跨域注入工具](#-跨域注入工具)。*
+*注意：如果视频源有 CORS 限制且未配置 Worker 代理，建议使用[跨域注入工具](#跨域注入工具)。*
 
 ## 使用说明
 
