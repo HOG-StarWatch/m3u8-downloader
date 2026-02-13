@@ -5,6 +5,9 @@
         return;
     }
 
+    // --- Configuration ---
+    const PROXY_URL = "{{PROXY_URL}}"; // Will be replaced by index.html injector
+
     // --- CDNs & Fallback ---
     const CDNS = {
         vue: [
@@ -156,10 +159,14 @@
                 // Logic Helpers
                 const log = (msg) => { status.value = msg; console.log('[Inj]', msg); };
                 
-                const fetchBuffer = async (u) => {
-                    const res = await fetch(u);
+                const fetchHelper = async (u, asText = false) => {
+                    // Use 'include' to send cookies with the request (crucial for injected scripts)
+                    // This allows fetching protected resources on the same origin or allowed subdomains
+                    const res = await fetch(u, { 
+                        credentials: 'include'
+                    });
                     if (!res.ok) throw new Error(`Fetch ${res.status}`);
-                    return res.arrayBuffer();
+                    return asText ? await res.text() : await res.arrayBuffer();
                 };
 
                 const decrypt = async (data, key, id) => {
@@ -232,7 +239,7 @@
                         // Sequential for safety (or small concurrency)
                         for (const seg of segs) {
                             try {
-                                let data = await fetchBuffer(seg.url);
+                                let data = await fetchHelper(seg.url, false);
                                 if (seg.key) data = await decrypt(data, seg.key, seg.id);
                                 blobs.push(data);
                                 done++;
@@ -254,8 +261,15 @@
                             });
                             for (const b of blobs) transmuxer.push(new Uint8Array(b));
                             transmuxer.flush();
-                            const finalBlob = new Blob(parts, { type: 'video/mp4' });
-                            downloadBlob(finalBlob, 'video.mp4');
+
+                            if (parts.length === 0) {
+                                log('MP4 Muxing failed (empty data), fallback to TS...');
+                                const finalBlob = new Blob(blobs, { type: 'video/mp2t' });
+                                downloadBlob(finalBlob, 'video.ts');
+                            } else {
+                                const finalBlob = new Blob(parts, { type: 'video/mp4' });
+                                downloadBlob(finalBlob, 'video.mp4');
+                            }
                         } else {
                             const finalBlob = new Blob(blobs, { type: 'video/mp2t' });
                             downloadBlob(finalBlob, 'video.ts');

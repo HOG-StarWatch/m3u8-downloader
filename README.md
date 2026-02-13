@@ -131,7 +131,7 @@ npx wrangler pages dev .
 
 ## 跨域注入工具
 
-针对开启了严格防盗链（Referer Check）或 CORS 限制的网站，本项目提供了专家级注入工具。
+针对开启了严格防盗链（Referer Check）或 CORS 限制的网站，本项目提供了注入工具。
 
 ### 原理
 通过在目标网站的 Context 下运行代码，直接复用当前页面的 Cookie 和 Referer，彻底绕过鉴权限制。
